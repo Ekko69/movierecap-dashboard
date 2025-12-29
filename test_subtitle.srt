@@ -1,0 +1,38 @@
+1
+00:00:01,000 --> 00:00:04,000
+THE SHAWSHANK REDEMPTION (1994)
+
+2
+00:00:05,000 --> 00:00:08,000
+In 1947, banker Andy Dufresne is convicted
+of murdering his wife and her lover.
+
+3
+00:00:09,000 --> 00:00:12,000
+He is sentenced to two consecutive life terms
+at Shawshank State Penitentiary.
+
+4
+00:00:13,000 --> 00:00:16,000
+There, he befriends Ellis "Red" Redding,
+a fellow inmate and contraband smuggler.
+
+5
+00:00:17,000 --> 00:00:20,000
+Andy maintains his innocence throughout his time in prison,
+but the corrupt warden uses him for money laundering.
+
+6
+00:00:21,000 --> 00:00:24,000
+Over the years, Andy secretly digs a tunnel
+through his cell wall using a rock hammer.
+
+7
+00:00:25,000 --> 00:00:28,000
+After nearly 20 years, he escapes through the tunnel
+and exposes the warden's crimes.
+
+8
+00:00:29,000 --> 00:00:32,000
+Red is eventually paroled and reunites with Andy
+in Zihuatanejo, Mexico, fulfilling their dream of freedom.

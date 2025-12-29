@@ -18,16 +18,17 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
 // Firebase Config
-const firebaseConfig = {
-    apiKey: "AIzaSyAQ7xMtda-3LPc5tFcu2F46GbZnDnLv_yg",
-    authDomain: "movie-recap-1306e.firebaseapp.com",
-    databaseURL: "https://movie-recap-1306e-default-rtdb.firebaseio.com",
-    projectId: "movie-recap-1306e",
-    storageBucket: "movie-recap-1306e.firebasestorage.app",
-    messagingSenderId: "289674950368",
-    appId: "1:289674950368:web:71637dd0fcec1bedf18285",
-    measurementId: "G-D03ZRJWX1F"
-};
+// Firebase Config
+if (!window.CONFIG) {
+    alert("Configuration missing! Please Rename config.example.js to config.js and update it.");
+    throw new Error("Configuration missing");
+}
+
+const firebaseConfig = window.CONFIG.firebaseConfig;
+if (!firebaseConfig) {
+    alert("Firebase configuration missing in config.js!");
+    throw new Error("Firebase configuration missing");
+}
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
@@ -100,12 +101,75 @@ videoInput.addEventListener('change', (e) => {
     if (e.target.files.length) handleVideoSelect(e.target.files[0]);
 });
 
-subtitleInput.addEventListener('change', (e) => {
+subtitleInput.addEventListener('change', async (e) => {
     if (e.target.files.length) {
         const file = e.target.files[0];
         if (file.name.endsWith('.vtt') || file.name.endsWith('.srt')) {
             currentSubtitleFile = file;
             subtitleFileName.textContent = file.name;
+
+            // Automatically analyze subtitle and populate fields
+            subtitleFileName.textContent = `${file.name} - ⏳ Analyzing...`;
+
+            try {
+                const metadata = await analyzeSubtitleFile(file);
+
+                // Auto-populate form fields
+                document.getElementById('title').value = metadata.title;
+                document.getElementById('year').value = metadata.year;
+                document.getElementById('description').value = metadata.description;
+
+                // Auto-select genres
+                if (metadata.genres && Array.isArray(metadata.genres)) {
+                    // Uncheck all first (optional, but good for retries)
+                    document.querySelectorAll('input[name="category"]').forEach(cb => cb.checked = false);
+
+                    metadata.genres.forEach(genre => {
+                        // Capitalize first letter just in case AI returns lowercase
+                        const formattedGenre = genre.charAt(0).toUpperCase() + genre.slice(1).toLowerCase();
+                        // Special handling for Sci-Fi if needed, but usually AI gets it right if prompt is clear.
+                        // Actually, our values are Title Case.
+                        // Let's try to match by value.
+
+                        // We need to handle case sensitivity properly or leniently.
+                        // Let's iterate all checkboxes and check if value matches loosely.
+                        const checkbox = document.querySelector(`input[name="category"][value="${genre}"]`) ||
+                            document.querySelector(`input[name="category"][value="${formattedGenre}"]`);
+
+                        if (checkbox) {
+                            checkbox.checked = true;
+                        } else {
+                            // Try deeper search for "Sci-Fi" vs "Sci-fi" etc
+                            const allCbs = document.querySelectorAll('input[name="category"]');
+                            for (const cb of allCbs) {
+                                if (cb.value.toLowerCase() === genre.toLowerCase()) {
+                                    cb.checked = true;
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                }
+
+                subtitleFileName.textContent = `${file.name} - ✅ Analysis complete`;
+
+                // Show success message briefly
+                setTimeout(() => {
+                    subtitleFileName.textContent = file.name;
+                }, 3000);
+
+            } catch (error) {
+                console.error('Error analyzing subtitle:', error);
+                subtitleFileName.textContent = `${file.name} - ⚠️ Analysis failed`;
+
+                // Show error message
+                alert('Failed to analyze subtitle file. You can still upload it and fill in the details manually.\n\nError: ' + error.message);
+
+                // Reset to just filename after delay
+                setTimeout(() => {
+                    subtitleFileName.textContent = file.name;
+                }, 3000);
+            }
         } else {
             alert('Please select a .vtt or .srt file.');
             subtitleInput.value = '';
@@ -193,6 +257,103 @@ async function generateDescription() {
     } finally {
         aiGenerateBtn.disabled = false;
         aiGenerateBtn.textContent = '✨ AI Generate';
+    }
+}
+
+// Analyze subtitle file and extract movie metadata
+async function analyzeSubtitleFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onload = async (e) => {
+            try {
+                const content = e.target.result;
+                // Extract first 2000 characters to stay within token limits
+                const sample = content.substring(0, 2000);
+
+                const metadata = await extractMovieMetadata(sample);
+                resolve(metadata);
+            } catch (error) {
+                reject(error);
+            }
+        };
+
+        reader.onerror = () => reject(new Error('Failed to read subtitle file'));
+        reader.readAsText(file);
+    });
+}
+
+// Extract movie metadata using OpenAI API
+async function extractMovieMetadata(subtitleContent) {
+    if (!OPENAI_API_KEY) {
+        alert("OpenAI API Key is missing in config.js! Video analysis will not work.");
+        throw new Error('OpenAI API key not configured');
+    }
+
+    const prompt = `Analyze this subtitle content and extract the following information:
+1. Movie title (if not clearly stated, create a 1-3 word descriptive title based on the content)
+2. Year of release (if not found, return "N/A")
+3. A short, engaging 2-3 sentence description (under 150 characters)
+4. Genres (Select relevant ones from this list ONLY: "Action", "Comedy", "Drama", "Sci-Fi", "Horror", "Thriller", "Romance", "Fantasy", "Documentary")
+
+Subtitle content:
+${subtitleContent}
+
+Return ONLY a JSON object in this exact format:
+{"title": "Movie Title", "year": "2024", "description": "Short description here", "genres": ["Action", "Thriller"]}
+
+If year is not found, use "N/A" for the year value.`;
+
+    try {
+        const response = await fetch(OPENAI_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${OPENAI_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: 'gpt-3.5-turbo',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a movie metadata extraction expert. Analyze subtitle content and extract movie information. Always return valid JSON.'
+                    },
+                    {
+                        role: 'user',
+                        content: prompt
+                    }
+                ],
+                max_tokens: 200,
+                temperature: 0.3
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`OpenAI API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const content = data.choices[0].message.content.trim();
+
+        // Parse JSON response
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            throw new Error('Invalid response format from API');
+        }
+
+        const metadata = JSON.parse(jsonMatch[0]);
+
+        // Validate and set defaults
+        return {
+            title: metadata.title || 'Movie Recap',
+            year: metadata.year || 'N/A',
+            description: metadata.description || '',
+            genres: Array.isArray(metadata.genres) ? metadata.genres : []
+        };
+
+    } catch (error) {
+        console.error('Error extracting metadata:', error);
+        throw error;
     }
 }
 
