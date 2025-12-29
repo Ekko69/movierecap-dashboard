@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Recap Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="assets/img/app-icon.png">
+</head>
+
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo-container">
+                <img src="assets/img/logo-text.png" alt="Movie Recap" class="brand-logo">
+            </div>
+
+            <nav class="nav-menu">
+                <button class="nav-item active" id="nav-dashboard">
+                    <span class="icon">🎬</span> Movies
+                </button>
+                <!-- Placeholder for future nav items -->
+                <button class="nav-item" id="nav-settings">
+                    <span class="icon">⚙️</span> Settings
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="admin-profile">
+                    <div class="avatar">A</div>
+                    <div class="info">
+                        <span class="name">Admin User</span>
+                        <span class="role">Manager</span>
+                    </div>
+                </div>
+                <div style="margin-top: 15px; font-size: 0.8rem; padding-left: 5px;">
+                    <a href="privacy_policy.html"
+                        style="color: var(--text-muted); text-decoration: none; display: flex; align-items: center; gap: 8px;">
+                        <span>🔒</span> Privacy Policy
+                    </a>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-header">
+                <h1 class="page-title">Dashboard</h1>
+                <button id="add-movie-toggle" class="btn btn-primary">
+                    <span class="icon">+</span> Add New Movie
+                </button>
+            </header>
+
+            <!-- Upload / Edit Form Panel -->
+            <section id="movie-form-panel" class="panel-overlay hidden">
+                <div class="panel-content">
+                    <div class="panel-header">
+                        <h2 id="form-title">Add New Movie</h2>
+                        <button id="close-form-btn" class="btn-icon">&times;</button>
+                    </div>
+
+                    <form id="movie-form">
+                        <input type="hidden" id="movie-id">
+
+                        <!-- Video Upload Section -->
+                        <div class="form-section upload-section">
+                            <h3>Media</h3>
+                            <div class="upload-grid">
+                                <div class="file-drop-zone" id="video-drop-zone">
+                                    <input type="file" id="video-file" accept="video/mp4" class="hidden-input">
+                                    <div class="drop-content">
+                                        <div class="icon-circle">⬆️</div>
+                                        <p>Drag & drop video here or <span class="highlight">browse</span></p>
+                                        <small>MP4 files only</small>
+                                    </div>
+                                    <video id="video-preview" controls class="hidden"></video>
+                                    <button type="button" id="change-video-btn" class="btn-text hidden">Change
+                                        Video</button>
+                                </div>
+
+                                <div class="thumbnail-zone">
+                                    <label>Thumbnail</label>
+                                    <div class="thumbnail-preview-container">
+                                        <img id="thumbnail-img" src="" alt="Thumbnail Preview" class="hidden">
+                                        <div class="placeholder-thumb" id="thumb-placeholder">
+                                            <span>No Thumbnail</span>
+                                        </div>
+                                        <!-- Crop Interface -->
+                                        <div id="crop-interface" class="crop-interface hidden">
+                                            <canvas id="crop-canvas"></canvas>
+                                            <div id="crop-box" class="crop-box">
+                                                <div class="crop-handle nw"></div>
+                                                <div class="crop-handle ne"></div>
+                                                <div class="crop-handle sw"></div>
+                                                <div class="crop-handle se"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="thumb-controls">
+                                        <button type="button" id="capture-btn" class="btn btn-secondary" disabled>
+                                            📸 Capture from Video
+                                        </button>
+                                        <div id="crop-controls" class="crop-controls hidden">
+                                            <button type="button" id="apply-crop-btn" class="btn btn-primary btn-sm">
+                                                ✂️ Apply Crop
+                                            </button>
+                                            <button type="button" id="cancel-crop-btn" class="btn btn-ghost btn-sm">
+                                                Cancel
+                                            </button>
+                                        </div>
+                                        <canvas id="capture-canvas" class="hidden"></canvas>
+                                    </div>
+                                </div>
+                                <div class="subtitle-zone">
+                                    <label>Subtitles (.vtt, .srt)</label>
+                                    <div class="file-input-wrapper">
+                                        <input type="file" id="subtitle-file" accept=".vtt,.srt">
+                                        <span id="subtitle-file-name">No file selected</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Metadata Section -->
+                        <div class="form-section metadata-section">
+                            <h3>Movie Details</h3>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="title">Movie Title</label>
+                                    <input type="text" id="title" placeholder="e.g. Inception" required>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="year">Release Year</label>
+                                    <input type="number" id="year" placeholder="2023" min="1900" max="2099" required>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="duration">Duration</label>
+                                    <input type="text" id="duration" placeholder="e.g. 14m 20s" required>
+                                </div>
+
+                                <div class="form-group category-group">
+                                    <label>Categories (Select multiple)</label>
+                                    <div class="category-chips">
+                                        <div class="category-section">
+                                            <span class="section-label">Special</span>
+                                            <label class="chip-label">
+                                                <input type="checkbox" name="category" value="Top Picks">
+                                                <span class="chip">Top Picks</span>
+                                            </label>
+                                            <label class="chip-label">
+                                                <input type="checkbox" name="category" value="New">
+                                                <span class="chip">New</span>
+                                            </label>
+                                        </div>
+                                        <div class="category-section">
+                                            <span class="section-label">Genres</span>
+                                            <label class="chip-label">
+                                                <input type="checkbox" name="category" value="Action">
+                                                <span class="chip">Action</span>
+                                            </label>
+                                            <label class="chip-label">
+                                                <input type="checkbox" name="category" value="Comedy">
+                                                <span class="chip">Comedy</span>
+                                            </label>
+                                            <label class="chip-label">
+                                                <input type="checkbox" name="category" value="Drama">
+                                                <span class="chip">Drama</span>
+                                            </label>
+                                            <label class="chip-label">
+                                                <input type="checkbox" name="category" value="Sci-Fi">
+                                                <span class="chip">Sci-Fi</span>
+                                            </label>
+                                            <label class="chip-label">
+                                                <input type="checkbox" name="category" value="Horror">
+                                                <span class="chip">Horror</span>
+                                            </label>
+                                            <label class="chip-label">
+                                                <input type="checkbox" name="category" value="Thriller">
+                                                <span class="chip">Thriller</span>
+                                            </label>
+                                            <label class="chip-label">
+                                                <input type="checkbox" name="category" value="Romance">
+                                                <span class="chip">Romance</span>
+                                            </label>
+                                            <label class="chip-label">
+                                                <input type="checkbox" name="category" value="Fantasy">
+                                                <span class="chip">Fantasy</span>
+                                            </label>
+                                            <label class="chip-label">
+                                                <input type="checkbox" name="category" value="Documentary">
+                                                <span class="chip">Documentary</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="description">Description</label>
+                                <div class="description-input-group">
+                                    <textarea id="description" rows="4" placeholder="Brief synopsis..."
+                                        required></textarea>
+                                    <button type="button" id="ai-generate-btn" class="btn btn-secondary btn-sm ai-btn">
+                                        ✨ AI Generate
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Progress & Actions -->
+                        <div class="form-footer">
+                            <div id="progress-container" class="progress-container hidden">
+                                <span class="progress-label">Uploading...</span>
+                                <div class="progress-track">
+                                    <div id="upload-progress-bar" class="progress-fill"></div>
+                                </div>
+                            </div>
+                            <div class="action-buttons">
+                                <button type="button" class="btn btn-ghost" id="cancel-form">Cancel</button>
+                                <button type="submit" class="btn btn-primary" id="save-btn">Upload & Save</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Movie Grid -->
+            <section class="content-body">
+                <div class="filter-bar">
+                    <input type="text" id="search-input" placeholder="Search movies..." class="search-input">
+                    <!-- Future filters could belong here -->
+                </div>
+
+                <div id="movies-container" class="movies-grid">
+                    <!-- Dynamic Content -->
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <p>Loading movies...</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="delete-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Delete Movie?</h3>
+            <p>Are you sure you want to delete <strong id="delete-movie-title"></strong>? This cannot be undone.</p>
+            <div class="modal-actions">
+                <button id="cancel-delete" class="btn btn-ghost">Cancel</button>
+                <button id="confirm-delete" class="btn btn-danger">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs are loaded in app.js via module imports, but we need the compat or modular styles. 
+         The plan said "Import via CDN (ES Modules)". 
+         We will do that in app.js. -->
+    <script src="config.js"></script>
+    <script type="module" src="app.js"></script>
+</body>
+
+</html>
