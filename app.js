@@ -36,8 +36,9 @@ const db = getDatabase(app);
 const storage = getStorage(app);
 
 // OpenAI Configuration
-const OPENAI_API_KEY = window.CONFIG ? window.CONFIG.OPENAI_API_KEY : '';
-const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
+// OpenAI Configuration
+// API Key is now handled on the server side (Vercel Functions)
+const AI_API_URL = '/api/ai-service';
 
 
 // DOM Elements
@@ -219,24 +220,13 @@ async function generateDescription() {
     try {
         const prompt = `Write a short, engaging 2-3 sentence description for a movie recap video about "${title}"${year ? ` (${year})` : ''}. Make it exciting and capture the essence of the story. Focus on the main plot and what makes it interesting. Keep it under 150 characters.`;
 
-        const response = await fetch(OPENAI_API_URL, {
+        const response = await fetch(AI_API_URL, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${OPENAI_API_KEY}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'gpt-3.5-turbo',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a creative writer specializing in movie recap descriptions. Write concise, engaging descriptions that capture the essence of movies.'
-                    },
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
+                prompt: prompt,
                 max_tokens: 100,
                 temperature: 0.7
             })
@@ -285,10 +275,7 @@ async function analyzeSubtitleFile(file) {
 
 // Extract movie metadata using OpenAI API
 async function extractMovieMetadata(subtitleContent) {
-    if (!OPENAI_API_KEY) {
-        alert("OpenAI API Key is missing in config.js! Video analysis will not work.");
-        throw new Error('OpenAI API key not configured');
-    }
+    // No API check needed here, server handles it
 
     const prompt = `Analyze this subtitle content and extract the following information:
 1. Movie title (if not clearly stated, create a 1-3 word descriptive title based on the content)
@@ -305,24 +292,13 @@ Return ONLY a JSON object in this exact format:
 If year is not found, use "N/A" for the year value.`;
 
     try {
-        const response = await fetch(OPENAI_API_URL, {
+        const response = await fetch(AI_API_URL, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${OPENAI_API_KEY}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'gpt-3.5-turbo',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a movie metadata extraction expert. Analyze subtitle content and extract movie information. Always return valid JSON.'
-                    },
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
+                prompt: prompt,
                 max_tokens: 200,
                 temperature: 0.3
             })

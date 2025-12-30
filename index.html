@@ -262,7 +262,8 @@
     <!-- Firebase SDKs are loaded in app.js via module imports, but we need the compat or modular styles. 
          The plan said "Import via CDN (ES Modules)". 
          We will do that in app.js. -->
-    <script src="config.js"></script>
+    <script src="config.js"
+        onerror="console.error('Failed to load config.js'); alert('Failed to load config.js. Check console.');"></script>
     <script type="module" src="app.js"></script>
 </body>
 
