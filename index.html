@@ -60,7 +60,13 @@
                 <div class="panel-content">
                     <div class="panel-header">
                         <h2 id="form-title">Add New Movie</h2>
-                        <button id="close-form-btn" class="btn-icon">&times;</button>
+                        <div class="header-actions">
+                            <button id="sync-data-btn" class="btn btn-warning btn-sm" type="button"
+                                style="margin-right: 10px;">
+                                ⚡ Sync Movie Data
+                            </button>
+                            <button id="close-form-btn" class="btn-icon">&times;</button>
+                        </div>
                     </div>
 
                     <form id="movie-form">
@@ -131,17 +137,17 @@
                             <div class="form-grid">
                                 <div class="form-group">
                                     <label for="title">Movie Title</label>
-                                    <input type="text" id="title" placeholder="e.g. Inception" required>
+                                    <input type="text" id="title" placeholder="e.g. Inception">
                                 </div>
 
                                 <div class="form-group">
                                     <label for="year">Release Year</label>
-                                    <input type="number" id="year" placeholder="2023" min="1900" max="2099" required>
+                                    <input type="number" id="year" placeholder="2023" min="1900" max="2099">
                                 </div>
 
                                 <div class="form-group">
                                     <label for="duration">Duration</label>
-                                    <input type="text" id="duration" placeholder="e.g. 14m 20s" required>
+                                    <input type="text" id="duration" placeholder="e.g. 14m 20s">
                                 </div>
 
                                 <div class="form-group category-group">
@@ -204,8 +210,7 @@
                             <div class="form-group">
                                 <label for="description">Description</label>
                                 <div class="description-input-group">
-                                    <textarea id="description" rows="4" placeholder="Brief synopsis..."
-                                        required></textarea>
+                                    <textarea id="description" rows="4" placeholder="Brief synopsis..."></textarea>
                                     <button type="button" id="ai-generate-btn" class="btn btn-secondary btn-sm ai-btn">
                                         ✨ AI Generate
                                     </button>

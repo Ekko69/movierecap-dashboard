@@ -9,5 +9,7 @@ window.CONFIG = {
         messagingSenderId: "289674950368",
         appId: "1:289674950368:web:71637dd0fcec1bedf18285",
         measurementId: "G-D03ZRJWX1F"
-    }
+    },
+    // AssemblyAI API Key
+    assemblyAIKey: "YOUR_ASSEMBLYAI_API_KEY"
 };

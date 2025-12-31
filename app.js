@@ -30,6 +30,11 @@ if (!firebaseConfig) {
     throw new Error("Firebase configuration missing");
 }
 
+const ASSEMBLY_AI_KEY = window.CONFIG.assemblyAIKey;
+if (!ASSEMBLY_AI_KEY) {
+    console.warn("AssemblyAI key missing in config.js. automated transcription will be disabled.");
+}
+
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
@@ -74,6 +79,7 @@ let currentVideoFile = null;
 let currentThumbnailBlob = null;
 let currentSubtitleFile = null;
 let editingMovieId = null;
+let uploadedVideoUrl = null; // Track uploaded URL to avoid duplicates
 
 // --- Event Listeners ---
 
@@ -202,6 +208,9 @@ searchInput.addEventListener('input', (e) => filterMovies(e.target.value));
 
 // AI Generate Description
 aiGenerateBtn.addEventListener('click', generateDescription);
+
+// Sync Data
+document.getElementById('sync-data-btn').addEventListener('click', syncMovieData);
 
 // --- Functions ---
 
@@ -392,6 +401,8 @@ function resetMediaInputs() {
     videoPreview.classList.add('hidden');
     dropZone.querySelector('.drop-content').classList.remove('hidden');
     changeVideoBtn.classList.add('hidden');
+    uploadedVideoUrl = null;
+    window.tempGeneratedSubtitleUrl = null;
 
     thumbnailImg.src = '';
     thumbnailImg.classList.add('hidden');
@@ -428,6 +439,9 @@ function handleVideoSelect(file) {
         const formattedDuration = `${minutes}m ${seconds}s`;
         document.getElementById('duration').value = formattedDuration;
     };
+
+    // Reset uploaded URL if video changes
+    uploadedVideoUrl = null;
 }
 
 // Crop Interface Elements
@@ -599,25 +613,127 @@ cancelCropBtn.addEventListener('click', () => {
 });
 
 
-async function handleFormSubmit(e) {
-    e.preventDefault();
+async function uploadVideoIfNeeded(movieId) {
+    if (uploadedVideoUrl) return uploadedVideoUrl;
+    if (!currentVideoFile) return null;
 
-    const title = document.getElementById('title').value;
-    const year = parseInt(document.getElementById('year').value);
-    const duration = document.getElementById('duration').value;
-    const description = document.getElementById('description').value;
+    uploadProgressBar.classList.remove('bg-success');
+    document.querySelector('.progress-label').textContent = `Uploading ${currentVideoFile.name} (0%)...`;
+    progressContainer.classList.remove('hidden');
 
-    // Collect selected categories
-    const selectedCategories = Array.from(document.querySelectorAll('input[name="category"]:checked'))
-        .map(cb => cb.value);
+    const vidRef = storageRef(storage, `videos/${movieId}/${currentVideoFile.name}`);
+    const vidUploadAndProgress = uploadBytesResumable(vidRef, currentVideoFile);
 
-    if (selectedCategories.length === 0) {
-        alert('Please select at least one category.');
+    vidUploadAndProgress.on('state_changed', (snapshot) => {
+        const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+        document.querySelector('.progress-label').textContent = `Uploading Video: ${progress}%`;
+        uploadProgressBar.style.width = `${progress * 0.5}%`; // First 50% for upload
+    });
+
+    await vidUploadAndProgress;
+    uploadedVideoUrl = await getDownloadURL(vidRef);
+    return uploadedVideoUrl;
+}
+
+async function syncMovieData() {
+    if (!currentVideoFile && !uploadedVideoUrl) {
+        alert("Please select a video file first.");
         return;
     }
 
-    if (!editingMovieId && (!currentVideoFile || !currentThumbnailBlob)) {
-        alert('Please upload a video and capture a thumbnail.');
+    if (!ASSEMBLY_AI_KEY) {
+        alert("Assembly API Key is missing.");
+        return;
+    }
+
+    const btn = document.getElementById('sync-data-btn');
+    btn.disabled = true;
+    btn.textContent = "⏳ Syncing...";
+    progressContainer.classList.remove('hidden');
+
+    try {
+        const movieId = editingMovieId || crypto.randomUUID();
+
+        // 1. Upload
+        const videoUrl = await uploadVideoIfNeeded(movieId);
+        if (!videoUrl) throw new Error("Video upload failed");
+
+        // 2. Transcribe
+        document.querySelector('.progress-label').textContent = "Requesting Transcription...";
+        uploadProgressBar.style.width = '60%';
+
+        const transcriptId = await transcribeAudio(videoUrl);
+
+        const transcript = await pollTranscription(transcriptId, (status) => {
+            document.querySelector('.progress-label').textContent = `Transcribing: ${status}...`;
+        });
+
+        uploadProgressBar.style.width = '80%';
+        document.querySelector('.progress-label').textContent = "Processing Metadata...";
+
+        // 3. Save Generated SRT (temporary until save? No, let's save it now)
+        const srtContent = await getTranscriptSRT(transcriptId);
+
+        const srtBlob = new Blob([srtContent], { type: 'text/vtt' });
+        const srtRef = storageRef(storage, `subtitles/${movieId}/generated.srt`);
+        await uploadBytesResumable(srtRef, srtBlob);
+        const subtitleUrl = await getDownloadURL(srtRef);
+
+        // Store strict ref to this subtitle? Or just auto-load it
+        // Let's create a "virtual" file for the form
+        subtitleFileName.textContent = "generated.srt (Auto-synced)";
+        // We can't set file input value, but we can set a flag or just assume it's there
+        // Ideally we save this URL to a hidden field or global
+        window.tempGeneratedSubtitleUrl = subtitleUrl;
+
+        // 4. Extract logic
+        const metadata = await extractMovieMetadata(transcript.text.substring(0, 5000));
+
+        document.getElementById('title').value = metadata.title;
+        document.getElementById('year').value = metadata.year;
+        document.getElementById('description').value = metadata.description;
+
+        // Categories
+        document.querySelectorAll('input[name="category"]').forEach(cb => cb.checked = false);
+        if (metadata.genres) {
+            metadata.genres.forEach(g => {
+                // Approximate match
+                Array.from(document.querySelectorAll('input[name="category"]')).forEach(cb => {
+                    if (cb.value.toLowerCase() === g.toLowerCase()) cb.checked = true;
+                });
+            });
+        }
+
+        uploadProgressBar.style.width = '100%';
+        document.querySelector('.progress-label').textContent = "Sync Complete!";
+        setTimeout(() => {
+            progressContainer.classList.add('hidden');
+            alert("Sync completed successfully! Please review the details.");
+        }, 500);
+
+    } catch (error) {
+        console.error("Sync error:", error);
+        alert("Sync failed: " + error.message);
+        document.querySelector('.progress-label').textContent = "Sync Failed!";
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "⚡ Sync Movie Data";
+    }
+}
+
+async function handleFormSubmit(e) {
+    e.preventDefault();
+
+    let title = document.getElementById('title').value;
+    let year = document.getElementById('year').value;
+    const duration = document.getElementById('duration').value;
+    let description = document.getElementById('description').value;
+
+    const selectedCategories = Array.from(document.querySelectorAll('input[name="category"]:checked'))
+        .map(cb => cb.value);
+
+    if (!editingMovieId && (!currentVideoFile && !uploadedVideoUrl)) {
+        alert('Please upload a video.');
         return;
     }
 
@@ -625,57 +741,45 @@ async function handleFormSubmit(e) {
     progressContainer.classList.remove('hidden');
 
     try {
-        let videoUrl = null;
+        const movieId = editingMovieId || crypto.randomUUID();
+        let videoUrl = uploadedVideoUrl;
         let thumbnailUrl = null;
 
-        const movieId = editingMovieId || crypto.randomUUID();
-
-        // Upload Media if present to Storage
-        if (currentVideoFile) {
-            // Upload Video
-            const vidRef = storageRef(storage, `videos/${movieId}/${currentVideoFile.name}`);
-            const vidUploadAndProgress = uploadBytesResumable(vidRef, currentVideoFile);
-
-            // Just a basic progress visualization combining both
-            vidUploadAndProgress.on('state_changed', (snapshot) => {
-                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                uploadProgressBar.style.width = `${progress * 0.9}%`; // 90% for video
-            });
-
-            await vidUploadAndProgress;
-            videoUrl = await getDownloadURL(vidRef);
-
-            // Upload Thumbnail (only if video changed or explicitly captured)
-            if (currentThumbnailBlob) {
-                const thumbRef = storageRef(storage, `thumbnails/${movieId}/thumbnail.jpg`);
-                await uploadBytesResumable(thumbRef, currentThumbnailBlob);
-                thumbnailUrl = await getDownloadURL(thumbRef);
-            }
+        // Ensure video is uploaded if not already
+        if (!videoUrl && currentVideoFile) {
+            videoUrl = await uploadVideoIfNeeded(movieId);
         }
 
-        // Complete data object
+        // Upload Thumbnail
+        if (currentThumbnailBlob) {
+            document.querySelector('.progress-label').textContent = "Uploading Thumbnail...";
+            const thumbRef = storageRef(storage, `thumbnails/${movieId}/thumbnail.jpg`);
+            await uploadBytesResumable(thumbRef, currentThumbnailBlob);
+            thumbnailUrl = await getDownloadURL(thumbRef);
+        }
+
+        let subtitleUrl = window.tempGeneratedSubtitleUrl || null;
+        if (currentSubtitleFile) {
+            const subRef = storageRef(storage, `subtitles/${movieId}/${currentSubtitleFile.name}`);
+            await uploadBytesResumable(subRef, currentSubtitleFile);
+            subtitleUrl = await getDownloadURL(subRef);
+        }
+
         const movieData = {
             id: movieId,
-            title,
-            year,
+            title: title || "New Movie",
+            year: year || new Date().getFullYear(),
             duration,
-            categories: selectedCategories,
-            description,
+            categories: selectedCategories.length ? selectedCategories : ['New'],
+            description: description || "No description",
             updatedAt: Date.now()
         };
 
         if (videoUrl) movieData.videoURL = videoUrl;
         if (thumbnailUrl) movieData.thumbnail = thumbnailUrl;
+        if (subtitleUrl) movieData.subtitleURL = subtitleUrl;
 
-        // Upload Subtitle if present
-        if (currentSubtitleFile) {
-            const subRef = storageRef(storage, `subtitles/${movieId}/${currentSubtitleFile.name}`);
-            await uploadBytesResumable(subRef, currentSubtitleFile);
-            const subtitleUrl = await getDownloadURL(subRef);
-            movieData.subtitleURL = subtitleUrl;
-        }
-
-        // Save to Database
+        document.querySelector('.progress-label').textContent = "Saving...";
         if (editingMovieId) {
             await update(ref(db, 'movies/' + movieId), movieData);
         } else {
@@ -685,7 +789,7 @@ async function handleFormSubmit(e) {
         uploadProgressBar.style.width = '100%';
         setTimeout(() => {
             closeForm();
-            // Optional: Success toast
+            alert("Movie saved successfully!");
         }, 500);
 
     } catch (error) {
@@ -797,13 +901,55 @@ async function confirmDelete(id, title) {
 
         // Delete database entry
         await remove(ref(db, 'movies/' + id));
-
-        console.log(`Successfully deleted movie: ${title}`);
     } catch (error) {
-        console.error('Error deleting movie:', error);
-        alert('Error deleting movie: ' + error.message);
+        console.error("Error deleting movie:", error);
+        alert("Error deleting movie: " + error.message);
     }
 }
+
+// --- AssemblyAI Integration ---
+
+async function transcribeAudio(audioUrl) {
+    const response = await fetch('https://api.assemblyai.com/v2/transcript', {
+        method: 'POST',
+        headers: {
+            'authorization': ASSEMBLY_AI_KEY,
+            'content-type': 'application/json'
+        },
+        body: JSON.stringify({ audio_url: audioUrl })
+    });
+
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    return data.id;
+}
+
+async function pollTranscription(id, statusCallback) {
+    while (true) {
+        const response = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, {
+            headers: { 'authorization': ASSEMBLY_AI_KEY }
+        });
+        const data = await response.json();
+
+        if (statusCallback) statusCallback(data.status);
+
+        if (data.status === 'completed') return data;
+        if (data.status === 'error') throw new Error(data.error);
+
+        // Wait 3 seconds
+        await new Promise(r => setTimeout(r, 3000));
+    }
+}
+
+async function getTranscriptSRT(id) {
+    const response = await fetch(`https://api.assemblyai.com/v2/transcript/${id}/srt`, {
+        headers: { 'authorization': ASSEMBLY_AI_KEY }
+    });
+    return await response.text();
+}
+
+
+
 
 function filterMovies(query) {
     const cards = document.querySelectorAll('.movie-card');
