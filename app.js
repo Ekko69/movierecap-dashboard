@@ -33,7 +33,14 @@ if (!firebaseConfig) {
 const ASSEMBLY_AI_KEY = window.CONFIG.assemblyAIKey;
 if (!ASSEMBLY_AI_KEY) {
     console.warn("AssemblyAI key missing in config.js. automated transcription will be disabled.");
+    console.warn("AssemblyAI key missing in config.js. automated transcription will be disabled.");
 }
+
+const OMDB_API_KEY = window.CONFIG.omdbApiKey;
+if (!OMDB_API_KEY) {
+    console.warn("OMDB API Key missing in config.js");
+}
+
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
@@ -65,6 +72,10 @@ const thumbnailImg = document.getElementById('thumbnail-img');
 const captureCanvas = document.getElementById('capture-canvas');
 const thumbPlaceholder = document.getElementById('thumb-placeholder');
 
+// Featured Thumbnail Elements
+
+
+
 // Upload Status
 const progressContainer = document.getElementById('progress-container');
 const uploadProgressBar = document.getElementById('upload-progress-bar');
@@ -78,8 +89,12 @@ const subtitleFileName = document.getElementById('subtitle-file-name');
 let currentVideoFile = null;
 let currentThumbnailBlob = null;
 let currentSubtitleFile = null;
+
 let editingMovieId = null;
+
 let uploadedVideoUrl = null; // Track uploaded URL to avoid duplicates
+let fetchedPosterUrl = null; // Store poster URL from OMDB
+
 
 // --- Event Listeners ---
 
@@ -196,6 +211,9 @@ changeVideoBtn.addEventListener('click', (e) => {
     changeVideoBtn.classList.add('hidden');
     captureBtn.disabled = true;
 });
+
+
+
 
 // Capture Thumbnail
 captureBtn.addEventListener('click', captureThumbnail);
@@ -342,6 +360,29 @@ If year is not found, use "N/A" for the year value.`;
     }
 }
 
+async function fetchMovieFromOMDB(title, year) {
+    try {
+        let url = `https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${OMDB_API_KEY}`;
+        if (year && year !== 'N/A') {
+            url += `&y=${year}`;
+        }
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.Response === "True") {
+            return data;
+        } else {
+            console.warn("OMDB Movie not found:", data.Error);
+            return null;
+        }
+    } catch (error) {
+        console.error("Error fetching from OMDB:", error);
+        return null;
+    }
+}
+
+
 
 function openForm(movie = null) {
     movieForm.reset();
@@ -377,6 +418,9 @@ function openForm(movie = null) {
             thumbPlaceholder.classList.add('hidden');
         }
 
+
+
+
         // We won't load the full video into preview to save bandwidth, 
         // but we state that "New uploads will replace existing media"
     }
@@ -403,11 +447,15 @@ function resetMediaInputs() {
     changeVideoBtn.classList.add('hidden');
     uploadedVideoUrl = null;
     window.tempGeneratedSubtitleUrl = null;
+    fetchedPosterUrl = null;
+
 
     thumbnailImg.src = '';
     thumbnailImg.classList.add('hidden');
     thumbPlaceholder.classList.remove('hidden');
+
     captureBtn.disabled = true;
+
 
     progressContainer.classList.add('hidden');
     uploadProgressBar.style.width = '0%';
@@ -693,6 +741,41 @@ async function syncMovieData() {
         document.getElementById('year').value = metadata.year;
         document.getElementById('description').value = metadata.description;
 
+        // --- OMDB Integration ---
+        if (OMDB_API_KEY) {
+            document.querySelector('.progress-label').textContent = "Fetching details from OMDB...";
+            const omdbData = await fetchMovieFromOMDB(metadata.title, metadata.year);
+
+            if (omdbData) {
+                // Populate with official data
+                document.getElementById('title').value = omdbData.Title;
+                document.getElementById('year').value = omdbData.Year;
+                document.getElementById('description').value = omdbData.Plot;
+
+                // Handle Poster
+                if (omdbData.Poster && omdbData.Poster !== 'N/A') {
+                    fetchedPosterUrl = omdbData.Poster;
+                    thumbnailImg.src = fetchedPosterUrl;
+                    thumbnailImg.classList.remove('hidden');
+                    thumbPlaceholder.classList.add('hidden');
+                }
+
+                // Map Genres
+                if (omdbData.Genre) {
+                    const omdbGenres = omdbData.Genre.split(',').map(g => g.trim());
+                    // Merge with AI genres or replace? Let's just use OMDB genres + AI genres for better coverage
+                    // But duplicates? Set handles it.
+                    // Actually, let's prioritize OMDB genres but map them to our checkboxes.
+                    omdbGenres.forEach(g => {
+                        Array.from(document.querySelectorAll('input[name="category"]')).forEach(cb => {
+                            if (cb.value.toLowerCase() === g.toLowerCase()) cb.checked = true;
+                        });
+                    });
+                }
+            }
+        }
+
+
         // Categories
         document.querySelectorAll('input[name="category"]').forEach(cb => cb.checked = false);
         if (metadata.genres) {
@@ -745,7 +828,9 @@ async function handleFormSubmit(e) {
         let videoUrl = uploadedVideoUrl;
         let thumbnailUrl = null;
 
+
         // Ensure video is uploaded if not already
+
         if (!videoUrl && currentVideoFile) {
             videoUrl = await uploadVideoIfNeeded(movieId);
         }
@@ -756,7 +841,14 @@ async function handleFormSubmit(e) {
             const thumbRef = storageRef(storage, `thumbnails/${movieId}/thumbnail.jpg`);
             await uploadBytesResumable(thumbRef, currentThumbnailBlob);
             thumbnailUrl = await getDownloadURL(thumbRef);
+        } else if (fetchedPosterUrl) {
+            // Use the OMDB poster if no new upload
+            thumbnailUrl = fetchedPosterUrl;
         }
+
+
+
+
 
         let subtitleUrl = window.tempGeneratedSubtitleUrl || null;
         if (currentSubtitleFile) {
@@ -777,7 +869,15 @@ async function handleFormSubmit(e) {
 
         if (videoUrl) movieData.videoURL = videoUrl;
         if (thumbnailUrl) movieData.thumbnail = thumbnailUrl;
+
+        // Handle featured thumbnail update logic
+        // REMOVED: Consolidated to main thumbnail.
+        // We do typically NOT set featuredThumbnail anymore, 
+        // effectively deprecating it locally, while DB structure remains.
+
+
         if (subtitleUrl) movieData.subtitleURL = subtitleUrl;
+
 
         document.querySelector('.progress-label').textContent = "Saving...";
         if (editingMovieId) {

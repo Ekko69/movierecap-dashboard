@@ -11,5 +11,8 @@ window.CONFIG = {
         measurementId: "G-D03ZRJWX1F"
     },
     // AssemblyAI API Key
-    assemblyAIKey: "YOUR_ASSEMBLYAI_API_KEY"
+    assemblyAIKey: "YOUR_ASSEMBLYAI_API_KEY",
+
+    // OMDB API Key
+    omdbApiKey: "YOUR_OMDB_API_KEY"
 };
