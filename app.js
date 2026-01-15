@@ -807,20 +807,15 @@ async function syncMovieData() {
 
                 // Handle Poster
                 if (omdbData.Poster && omdbData.Poster !== 'N/A') {
-                    if (omdbData.Poster && omdbData.Poster !== 'N/A') {
-                        fetchedPosterUrl = omdbData.Poster;
-                        featuredPreview.src = fetchedPosterUrl;
-                        featuredPreview.classList.remove('hidden');
-                        featuredPlaceholder.classList.add('hidden');
-                        removeFeaturedBtn.classList.remove('hidden');
-                    }
+                    fetchedPosterUrl = omdbData.Poster;
+                    featuredPreview.src = fetchedPosterUrl;
+                    featuredPreview.classList.remove('hidden');
+                    featuredPlaceholder.classList.add('hidden');
+                    removeFeaturedBtn.classList.remove('hidden');
 
                     // Map Genres
                     if (omdbData.Genre) {
                         const omdbGenres = omdbData.Genre.split(',').map(g => g.trim());
-                        // Merge with AI genres or replace? Let's just use OMDB genres + AI genres for better coverage
-                        // But duplicates? Set handles it.
-                        // Actually, let's prioritize OMDB genres but map them to our checkboxes.
                         omdbGenres.forEach(g => {
                             Array.from(document.querySelectorAll('input[name="category"]')).forEach(cb => {
                                 if (cb.value.toLowerCase() === g.toLowerCase()) cb.checked = true;
@@ -829,181 +824,182 @@ async function syncMovieData() {
                     }
                 }
             }
-
-
-            // Categories
-            document.querySelectorAll('input[name="category"]').forEach(cb => cb.checked = false);
-            if (metadata.genres) {
-                metadata.genres.forEach(g => {
-                    // Approximate match
-                    Array.from(document.querySelectorAll('input[name="category"]')).forEach(cb => {
-                        if (cb.value.toLowerCase() === g.toLowerCase()) cb.checked = true;
-                    });
-                });
-            }
-
-            uploadProgressBar.style.width = '100%';
-            document.querySelector('.progress-label').textContent = "Sync Complete!";
-            setTimeout(() => {
-                progressContainer.classList.add('hidden');
-                alert("Sync completed successfully! Please review the details.");
-            }, 500);
-
-        } catch (error) {
-            console.error("Sync error:", error);
-            alert("Sync failed: " + error.message);
-            document.querySelector('.progress-label').textContent = "Sync Failed!";
-        } finally {
-            btn.disabled = false;
-            btn.textContent = "⚡ Sync Movie Data";
         }
+
+
+        // Categories
+        document.querySelectorAll('input[name="category"]').forEach(cb => cb.checked = false);
+        if (metadata.genres) {
+            metadata.genres.forEach(g => {
+                // Approximate match
+                Array.from(document.querySelectorAll('input[name="category"]')).forEach(cb => {
+                    if (cb.value.toLowerCase() === g.toLowerCase()) cb.checked = true;
+                });
+            });
+        }
+
+        uploadProgressBar.style.width = '100%';
+        document.querySelector('.progress-label').textContent = "Sync Complete!";
+        setTimeout(() => {
+            progressContainer.classList.add('hidden');
+            alert("Sync completed successfully! Please review the details.");
+        }, 500);
+
+    } catch (error) {
+        console.error("Sync error:", error);
+        alert("Sync failed: " + error.message);
+        document.querySelector('.progress-label').textContent = "Sync Failed!";
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "⚡ Sync Movie Data";
     }
+}
 
 async function handleFormSubmit(e) {
-        e.preventDefault();
+    e.preventDefault();
 
-        let title = document.getElementById('title').value;
-        let year = document.getElementById('year').value;
-        const duration = document.getElementById('duration').value;
-        let description = document.getElementById('description').value;
+    let title = document.getElementById('title').value;
+    let year = document.getElementById('year').value;
+    const duration = document.getElementById('duration').value;
+    let description = document.getElementById('description').value;
 
-        const selectedCategories = Array.from(document.querySelectorAll('input[name="category"]:checked'))
-            .map(cb => cb.value);
+    const selectedCategories = Array.from(document.querySelectorAll('input[name="category"]:checked'))
+        .map(cb => cb.value);
 
-        if (!editingMovieId && (!currentVideoFile && !uploadedVideoUrl)) {
-            alert('Please upload a video.');
-            return;
-        }
-
-        saveBtn.disabled = true;
-        progressContainer.classList.remove('hidden');
-
-        try {
-            const movieId = editingMovieId || crypto.randomUUID();
-            let videoUrl = uploadedVideoUrl;
-            let thumbnailUrl = null;
-
-
-            // Ensure video is uploaded if not already
-
-            if (!videoUrl && currentVideoFile) {
-                videoUrl = await uploadVideoIfNeeded(movieId);
-            }
-
-            // Upload Thumbnail (Main Video Thumbnail)
-            if (currentThumbnailBlob) {
-                document.querySelector('.progress-label').textContent = "Uploading Thumbnail...";
-                const thumbRef = storageRef(storage, `thumbnails/${movieId}/thumbnail.jpg`);
-                await uploadBytesResumable(thumbRef, currentThumbnailBlob);
-                thumbnailUrl = await getDownloadURL(thumbRef);
-            }
-
-            // Handle Featured Thumbnail (Poster)
-            let featuredThumbnailUrl = null;
-            if (currentFeaturedThumbnailFile) {
-                const featuredRef = storageRef(storage, `thumbnails/${movieId}/featured.jpg`);
-                await uploadBytesResumable(featuredRef, currentFeaturedThumbnailFile);
-                featuredThumbnailUrl = await getDownloadURL(featuredRef);
-            } else if (fetchedPosterUrl) {
-                featuredThumbnailUrl = fetchedPosterUrl;
-            } else if (editingMovieId) {
-                // Keep existing if editing and not replaced
-                // We need to fetch it first effectively, but since we don't have it in memory easily without re-fetch
-                // We can check if we want to keep it. 
-                // Actually, for simplicity, if we are editing, we should probably fetch the existing movie data first or pass it.
-                // But since we didn't wipe it from DB, we can just NOT update it if it's null, 
-                // OR we have to trust that the user didn't clear it.
-                // If the user clicked "remove", currentFeaturedThumbnailFile is null and fetchedPosterUrl is null.
-                // But we don't know if it WAS there.
-                // Let's rely on the fact that if we don't provide a new one, we might want to keep the old one?
-                // No, standard update logic: if undefined, don't update. If explicitly cleared... well, we can't easily detect explicit clear without a flag.
-                // For now, let's just save if we have a new one.
-            }
-
-
-
-
-
-            let subtitleUrl = window.tempGeneratedSubtitleUrl || null;
-            if (currentSubtitleFile) {
-                const subRef = storageRef(storage, `subtitles/${movieId}/${currentSubtitleFile.name}`);
-                await uploadBytesResumable(subRef, currentSubtitleFile);
-                subtitleUrl = await getDownloadURL(subRef);
-            }
-
-            const movieData = {
-                id: movieId,
-                title: title || "New Movie",
-                year: year || new Date().getFullYear(),
-                duration,
-                categories: selectedCategories.length ? selectedCategories : ['New'],
-                description: description || "No description",
-                updatedAt: Date.now()
-            };
-
-            if (videoUrl) movieData.videoURL = videoUrl;
-            if (videoUrl) movieData.videoURL = videoUrl;
-            if (thumbnailUrl) movieData.thumbnail = thumbnailUrl;
-            if (featuredThumbnailUrl) movieData.featuredThumbnail = featuredThumbnailUrl;
-
-            // Handle featured thumbnail update logic
-            // REMOVED: Consolidated to main thumbnail.
-            // We do typically NOT set featuredThumbnail anymore, 
-            // effectively deprecating it locally, while DB structure remains.
-
-
-            if (subtitleUrl) movieData.subtitleURL = subtitleUrl;
-
-
-            document.querySelector('.progress-label').textContent = "Saving...";
-            if (editingMovieId) {
-                await update(ref(db, 'movies/' + movieId), movieData);
-            } else {
-                await set(ref(db, 'movies/' + movieId), movieData);
-            }
-
-            uploadProgressBar.style.width = '100%';
-            setTimeout(() => {
-                closeForm();
-                alert("Movie saved successfully!");
-            }, 500);
-
-        } catch (error) {
-            console.error("Error saving movie:", error);
-            alert("Error saving movie: " + error.message);
-        } finally {
-            saveBtn.disabled = false;
-        }
+    if (!editingMovieId && (!currentVideoFile && !uploadedVideoUrl)) {
+        alert('Please upload a video.');
+        return;
     }
 
-    // --- Realtime Listeners ---
+    saveBtn.disabled = true;
+    progressContainer.classList.remove('hidden');
 
-    const moviesRef = ref(db, 'movies');
-    onValue(moviesRef, (snapshot) => {
-        moviesContainer.innerHTML = '';
-        const data = snapshot.val();
+    try {
+        const movieId = editingMovieId || crypto.randomUUID();
+        let videoUrl = uploadedVideoUrl;
+        let thumbnailUrl = null;
 
-        if (!data) {
-            moviesContainer.innerHTML = '<p class="loading-state">No movies found. Add one!</p>';
-            return;
+
+        // Ensure video is uploaded if not already
+
+        if (!videoUrl && currentVideoFile) {
+            videoUrl = await uploadVideoIfNeeded(movieId);
         }
 
-        const movieList = Object.values(data).sort((a, b) => b.updatedAt - a.updatedAt);
+        // Upload Thumbnail (Main Video Thumbnail)
+        if (currentThumbnailBlob) {
+            document.querySelector('.progress-label').textContent = "Uploading Thumbnail...";
+            const thumbRef = storageRef(storage, `thumbnails/${movieId}/thumbnail.jpg`);
+            await uploadBytesResumable(thumbRef, currentThumbnailBlob);
+            thumbnailUrl = await getDownloadURL(thumbRef);
+        }
 
-        movieList.forEach(movie => {
-            const card = createMovieCard(movie);
-            moviesContainer.appendChild(card);
-        });
+        // Handle Featured Thumbnail (Poster)
+        let featuredThumbnailUrl = null;
+        if (currentFeaturedThumbnailFile) {
+            const featuredRef = storageRef(storage, `thumbnails/${movieId}/featured.jpg`);
+            await uploadBytesResumable(featuredRef, currentFeaturedThumbnailFile);
+            featuredThumbnailUrl = await getDownloadURL(featuredRef);
+        } else if (fetchedPosterUrl) {
+            featuredThumbnailUrl = fetchedPosterUrl;
+        } else if (editingMovieId) {
+            // Keep existing if editing and not replaced
+            // We need to fetch it first effectively, but since we don't have it in memory easily without re-fetch
+            // We can check if we want to keep it. 
+            // Actually, for simplicity, if we are editing, we should probably fetch the existing movie data first or pass it.
+            // But since we didn't wipe it from DB, we can just NOT update it if it's null, 
+            // OR we have to trust that the user didn't clear it.
+            // If the user clicked "remove", currentFeaturedThumbnailFile is null and fetchedPosterUrl is null.
+            // But we don't know if it WAS there.
+            // Let's rely on the fact that if we don't provide a new one, we might want to keep the old one?
+            // No, standard update logic: if undefined, don't update. If explicitly cleared... well, we can't easily detect explicit clear without a flag.
+            // For now, let's just save if we have a new one.
+        }
+
+
+
+
+
+        let subtitleUrl = window.tempGeneratedSubtitleUrl || null;
+        if (currentSubtitleFile) {
+            const subRef = storageRef(storage, `subtitles/${movieId}/${currentSubtitleFile.name}`);
+            await uploadBytesResumable(subRef, currentSubtitleFile);
+            subtitleUrl = await getDownloadURL(subRef);
+        }
+
+        const movieData = {
+            id: movieId,
+            title: title || "New Movie",
+            year: year || new Date().getFullYear(),
+            duration,
+            categories: selectedCategories.length ? selectedCategories : ['New'],
+            description: description || "No description",
+            updatedAt: Date.now()
+        };
+
+        if (videoUrl) movieData.videoURL = videoUrl;
+        if (videoUrl) movieData.videoURL = videoUrl;
+        if (thumbnailUrl) movieData.thumbnail = thumbnailUrl;
+        if (featuredThumbnailUrl) movieData.featuredThumbnail = featuredThumbnailUrl;
+
+        // Handle featured thumbnail update logic
+        // REMOVED: Consolidated to main thumbnail.
+        // We do typically NOT set featuredThumbnail anymore, 
+        // effectively deprecating it locally, while DB structure remains.
+
+
+        if (subtitleUrl) movieData.subtitleURL = subtitleUrl;
+
+
+        document.querySelector('.progress-label').textContent = "Saving...";
+        if (editingMovieId) {
+            await update(ref(db, 'movies/' + movieId), movieData);
+        } else {
+            await set(ref(db, 'movies/' + movieId), movieData);
+        }
+
+        uploadProgressBar.style.width = '100%';
+        setTimeout(() => {
+            closeForm();
+            alert("Movie saved successfully!");
+        }, 500);
+
+    } catch (error) {
+        console.error("Error saving movie:", error);
+        alert("Error saving movie: " + error.message);
+    } finally {
+        saveBtn.disabled = false;
+    }
+}
+
+// --- Realtime Listeners ---
+
+const moviesRef = ref(db, 'movies');
+onValue(moviesRef, (snapshot) => {
+    moviesContainer.innerHTML = '';
+    const data = snapshot.val();
+
+    if (!data) {
+        moviesContainer.innerHTML = '<p class="loading-state">No movies found. Add one!</p>';
+        return;
+    }
+
+    const movieList = Object.values(data).sort((a, b) => b.updatedAt - a.updatedAt);
+
+    movieList.forEach(movie => {
+        const card = createMovieCard(movie);
+        moviesContainer.appendChild(card);
     });
+});
 
-    function createMovieCard(movie) {
-        const categoriesDisplay = movie.categories && Array.isArray(movie.categories)
-            ? movie.categories.join(', ')
-            : (movie.category || 'Uncategorized');
+function createMovieCard(movie) {
+    const categoriesDisplay = movie.categories && Array.isArray(movie.categories)
+        ? movie.categories.join(', ')
+        : (movie.category || 'Uncategorized');
 
-        const div = document.createElement('div');
-        div.className = 'movie-card';
-        div.innerHTML = `
+    const div = document.createElement('div');
+    div.className = 'movie-card';
+    div.innerHTML = `
         <div class="card-top">
             <img src="${movie.thumbnail || 'assets/img/app-icon.png'}" class="card-thumbnail" loading="lazy">
             <span class="duration-badge">${movie.duration}</span>
@@ -1023,120 +1019,120 @@ async function handleFormSubmit(e) {
         </div>
     `;
 
-        div.querySelector('.edit-btn').addEventListener('click', () => openForm(movie));
-        div.querySelector('.delete-btn').addEventListener('click', () => confirmDelete(movie.id, movie.title));
+    div.querySelector('.edit-btn').addEventListener('click', () => openForm(movie));
+    div.querySelector('.delete-btn').addEventListener('click', () => confirmDelete(movie.id, movie.title));
 
-        return div;
+    return div;
+}
+
+async function confirmDelete(id, title) {
+    if (!confirm(`Delete "${title}"? This cannot be undone.`)) {
+        return;
     }
 
-    async function confirmDelete(id, title) {
-        if (!confirm(`Delete "${title}"? This cannot be undone.`)) {
-            return;
-        }
+    try {
+        // Get movie data to find file paths
+        const movieRef = ref(db, 'movies/' + id);
+        const snapshot = await new Promise((resolve, reject) => {
+            onValue(movieRef, resolve, reject, { onlyOnce: true });
+        });
 
-        try {
-            // Get movie data to find file paths
-            const movieRef = ref(db, 'movies/' + id);
-            const snapshot = await new Promise((resolve, reject) => {
-                onValue(movieRef, resolve, reject, { onlyOnce: true });
-            });
+        const movieData = snapshot.val();
 
-            const movieData = snapshot.val();
-
-            if (movieData) {
-                // Delete video file from Storage if it exists
-                if (movieData.videoURL) {
-                    try {
-                        // Extract path from URL or use ID-based path
-                        const videoRef = storageRef(storage, `videos/${id}/`);
-                        // Note: We need to delete the specific file, but we don't have the exact filename
-                        // We'll use a pattern based on the stored URL
-                        const videoPath = movieData.videoURL.split('/o/')[1]?.split('?')[0];
-                        if (videoPath) {
-                            const decodedPath = decodeURIComponent(videoPath);
-                            await deleteObject(storageRef(storage, decodedPath));
-                        }
-                    } catch (error) {
-                        console.warn('Could not delete video file:', error);
+        if (movieData) {
+            // Delete video file from Storage if it exists
+            if (movieData.videoURL) {
+                try {
+                    // Extract path from URL or use ID-based path
+                    const videoRef = storageRef(storage, `videos/${id}/`);
+                    // Note: We need to delete the specific file, but we don't have the exact filename
+                    // We'll use a pattern based on the stored URL
+                    const videoPath = movieData.videoURL.split('/o/')[1]?.split('?')[0];
+                    if (videoPath) {
+                        const decodedPath = decodeURIComponent(videoPath);
+                        await deleteObject(storageRef(storage, decodedPath));
                     }
-                }
-
-                // Delete thumbnail file from Storage if it exists
-                if (movieData.thumbnail) {
-                    try {
-                        const thumbPath = movieData.thumbnail.split('/o/')[1]?.split('?')[0];
-                        if (thumbPath) {
-                            const decodedPath = decodeURIComponent(thumbPath);
-                            await deleteObject(storageRef(storage, decodedPath));
-                        }
-                    } catch (error) {
-                        console.warn('Could not delete thumbnail file:', error);
-                    }
+                } catch (error) {
+                    console.warn('Could not delete video file:', error);
                 }
             }
 
-            // Delete database entry
-            await remove(ref(db, 'movies/' + id));
-        } catch (error) {
-            console.error("Error deleting movie:", error);
-            alert("Error deleting movie: " + error.message);
+            // Delete thumbnail file from Storage if it exists
+            if (movieData.thumbnail) {
+                try {
+                    const thumbPath = movieData.thumbnail.split('/o/')[1]?.split('?')[0];
+                    if (thumbPath) {
+                        const decodedPath = decodeURIComponent(thumbPath);
+                        await deleteObject(storageRef(storage, decodedPath));
+                    }
+                } catch (error) {
+                    console.warn('Could not delete thumbnail file:', error);
+                }
+            }
         }
+
+        // Delete database entry
+        await remove(ref(db, 'movies/' + id));
+    } catch (error) {
+        console.error("Error deleting movie:", error);
+        alert("Error deleting movie: " + error.message);
     }
+}
 
-    // --- AssemblyAI Integration ---
+// --- AssemblyAI Integration ---
 
-    async function transcribeAudio(audioUrl) {
-        const response = await fetch('https://api.assemblyai.com/v2/transcript', {
-            method: 'POST',
-            headers: {
-                'authorization': ASSEMBLY_AI_KEY,
-                'content-type': 'application/json'
-            },
-            body: JSON.stringify({ audio_url: audioUrl })
-        });
+async function transcribeAudio(audioUrl) {
+    const response = await fetch('https://api.assemblyai.com/v2/transcript', {
+        method: 'POST',
+        headers: {
+            'authorization': ASSEMBLY_AI_KEY,
+            'content-type': 'application/json'
+        },
+        body: JSON.stringify({ audio_url: audioUrl })
+    });
 
-        const data = await response.json();
-        if (data.error) throw new Error(data.error);
-        return data.id;
-    }
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    return data.id;
+}
 
-    async function pollTranscription(id, statusCallback) {
-        while (true) {
-            const response = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, {
-                headers: { 'authorization': ASSEMBLY_AI_KEY }
-            });
-            const data = await response.json();
-
-            if (statusCallback) statusCallback(data.status);
-
-            if (data.status === 'completed') return data;
-            if (data.status === 'error') throw new Error(data.error);
-
-            // Wait 3 seconds
-            await new Promise(r => setTimeout(r, 3000));
-        }
-    }
-
-    async function getTranscriptSRT(id) {
-        const response = await fetch(`https://api.assemblyai.com/v2/transcript/${id}/srt`, {
+async function pollTranscription(id, statusCallback) {
+    while (true) {
+        const response = await fetch(`https://api.assemblyai.com/v2/transcript/${id}`, {
             headers: { 'authorization': ASSEMBLY_AI_KEY }
         });
-        return await response.text();
+        const data = await response.json();
+
+        if (statusCallback) statusCallback(data.status);
+
+        if (data.status === 'completed') return data;
+        if (data.status === 'error') throw new Error(data.error);
+
+        // Wait 3 seconds
+        await new Promise(r => setTimeout(r, 3000));
     }
+}
+
+async function getTranscriptSRT(id) {
+    const response = await fetch(`https://api.assemblyai.com/v2/transcript/${id}/srt`, {
+        headers: { 'authorization': ASSEMBLY_AI_KEY }
+    });
+    return await response.text();
+}
 
 
 
 
-    function filterMovies(query) {
-        const cards = document.querySelectorAll('.movie-card');
-        query = query.toLowerCase();
+function filterMovies(query) {
+    const cards = document.querySelectorAll('.movie-card');
+    query = query.toLowerCase();
 
-        cards.forEach(card => {
-            const title = card.querySelector('.card-title').innerText.toLowerCase();
-            if (title.includes(query)) {
-                card.classList.remove('hidden');
-            } else {
-                card.classList.add('hidden');
-            }
-        });
-    }
+    cards.forEach(card => {
+        const title = card.querySelector('.card-title').innerText.toLowerCase();
+        if (title.includes(query)) {
+            card.classList.remove('hidden');
+        } else {
+            card.classList.add('hidden');
+        }
+    });
+}
