@@ -141,6 +141,26 @@
                                     <input type="text" id="title" placeholder="e.g. Inception">
                                 </div>
 
+                                <!-- Vertical Poster (Featured Thumbnail) -->
+                                <div class="form-group">
+                                    <label>Movie Poster (9:16)</label>
+                                    <div id="featured-thumbnail-zone" class="upload-zone sm">
+                                        <div class="drop-content" id="featured-drop-content">
+                                            <i class="fas fa-image"></i>
+                                            <p>Drag or paste 9:16 poster</p>
+                                            <button type="button" class="btn btn-outline btn-sm"
+                                                onclick="document.getElementById('featured-thumbnail-file').click()">Select
+                                                File</button>
+                                        </div>
+                                        <input type="file" id="featured-thumbnail-file" accept="image/*" class="hidden">
+                                        <div id="featured-thumb-placeholder" class="thumb-placeholder hidden">Featured
+                                        </div>
+                                        <img id="featured-thumbnail-img" class="thumbnail-preview hidden">
+                                        <button type="button" id="remove-featured-btn" class="remove-btn hidden"
+                                            title="Remove Poster">×</button>
+                                    </div>
+                                </div>
+
                                 <div class="form-group">
                                     <label for="year">Release Year</label>
                                     <input type="number" id="year" placeholder="2023" min="1900" max="2099">
