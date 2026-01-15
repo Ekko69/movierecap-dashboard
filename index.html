@@ -135,123 +135,134 @@
                         <!-- Metadata Section -->
                         <div class="form-section metadata-section">
                             <h3>Movie Details</h3>
-                            <div class="form-grid">
-                                <div class="form-group">
-                                    <label for="title">Movie Title</label>
-                                    <input type="text" id="title" placeholder="e.g. Inception">
-                                </div>
+                            <div class="form-grid layout-2-col">
+                                <!-- Left Column: Inputs -->
+                                <div class="form-column main-inputs">
+                                    <div class="form-group">
+                                        <label for="title">Movie Title</label>
+                                        <input type="text" id="title" placeholder="e.g. Inception">
+                                    </div>
 
-                                <!-- Vertical Poster (Featured Thumbnail) -->
-                                <div class="form-group">
-                                    <label>Movie Poster (9:16)</label>
-                                    <div id="featured-thumbnail-zone" class="upload-zone sm">
-                                        <div class="drop-content" id="featured-drop-content">
-                                            <i class="fas fa-image"></i>
-                                            <p>Drag or paste 9:16 poster</p>
-                                            <button type="button" class="btn btn-outline btn-sm"
-                                                onclick="document.getElementById('featured-thumbnail-file').click()">Select
-                                                File</button>
+                                    <div class="row-group">
+                                        <div class="form-group">
+                                            <label for="year">Release Year</label>
+                                            <input type="number" id="year" placeholder="2023" min="1900" max="2099">
                                         </div>
-                                        <input type="file" id="featured-thumbnail-file" accept="image/*" class="hidden">
-                                        <div id="featured-thumb-placeholder" class="thumb-placeholder hidden">Featured
+
+                                        <div class="form-group">
+                                            <label for="duration">Duration</label>
+                                            <input type="text" id="duration" placeholder="e.g. 14m 20s">
                                         </div>
-                                        <img id="featured-thumbnail-img" class="thumbnail-preview hidden">
-                                        <button type="button" id="remove-featured-btn" class="remove-btn hidden"
-                                            title="Remove Poster">×</button>
+                                    </div>
+
+                                    <div class="form-group category-group">
+                                        <label>Categories (Select multiple)</label>
+                                        <div class="category-chips">
+                                            <div class="category-section">
+                                                <span class="section-label">Special</span>
+                                                <label class="chip-label">
+                                                    <input type="checkbox" name="category" value="Top Picks">
+                                                    <span class="chip">Top Picks</span>
+                                                </label>
+                                                <label class="chip-label">
+                                                    <input type="checkbox" name="category" value="New">
+                                                    <span class="chip">New</span>
+                                                </label>
+                                            </div>
+                                            <div class="category-section">
+                                                <span class="section-label">Genres</span>
+                                                <label class="chip-label">
+                                                    <input type="checkbox" name="category" value="Action">
+                                                    <span class="chip">Action</span>
+                                                </label>
+                                                <label class="chip-label">
+                                                    <input type="checkbox" name="category" value="Comedy">
+                                                    <span class="chip">Comedy</span>
+                                                </label>
+                                                <label class="chip-label">
+                                                    <input type="checkbox" name="category" value="Drama">
+                                                    <span class="chip">Drama</span>
+                                                </label>
+                                                <label class="chip-label">
+                                                    <input type="checkbox" name="category" value="Sci-Fi">
+                                                    <span class="chip">Sci-Fi</span>
+                                                </label>
+                                                <label class="chip-label">
+                                                    <input type="checkbox" name="category" value="Horror">
+                                                    <span class="chip">Horror</span>
+                                                </label>
+                                                <label class="chip-label">
+                                                    <input type="checkbox" name="category" value="Thriller">
+                                                    <span class="chip">Thriller</span>
+                                                </label>
+                                                <label class="chip-label">
+                                                    <input type="checkbox" name="category" value="Romance">
+                                                    <span class="chip">Romance</span>
+                                                </label>
+                                                <label class="chip-label">
+                                                    <input type="checkbox" name="category" value="Fantasy">
+                                                    <span class="chip">Fantasy</span>
+                                                </label>
+                                                <label class="chip-label">
+                                                    <input type="checkbox" name="category" value="Documentary">
+                                                    <span class="chip">Documentary</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="description">Description</label>
+                                        <div class="description-input-group">
+                                            <textarea id="description" rows="4"
+                                                placeholder="Brief synopsis..."></textarea>
+                                            <button type="button" id="ai-generate-btn"
+                                                class="btn btn-secondary btn-sm ai-btn">
+                                                ✨ AI Generate
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div class="form-group">
-                                    <label for="year">Release Year</label>
-                                    <input type="number" id="year" placeholder="2023" min="1900" max="2099">
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="duration">Duration</label>
-                                    <input type="text" id="duration" placeholder="e.g. 14m 20s">
-                                </div>
-
-                                <div class="form-group category-group">
-                                    <label>Categories (Select multiple)</label>
-                                    <div class="category-chips">
-                                        <div class="category-section">
-                                            <span class="section-label">Special</span>
-                                            <label class="chip-label">
-                                                <input type="checkbox" name="category" value="Top Picks">
-                                                <span class="chip">Top Picks</span>
-                                            </label>
-                                            <label class="chip-label">
-                                                <input type="checkbox" name="category" value="New">
-                                                <span class="chip">New</span>
-                                            </label>
-                                        </div>
-                                        <div class="category-section">
-                                            <span class="section-label">Genres</span>
-                                            <label class="chip-label">
-                                                <input type="checkbox" name="category" value="Action">
-                                                <span class="chip">Action</span>
-                                            </label>
-                                            <label class="chip-label">
-                                                <input type="checkbox" name="category" value="Comedy">
-                                                <span class="chip">Comedy</span>
-                                            </label>
-                                            <label class="chip-label">
-                                                <input type="checkbox" name="category" value="Drama">
-                                                <span class="chip">Drama</span>
-                                            </label>
-                                            <label class="chip-label">
-                                                <input type="checkbox" name="category" value="Sci-Fi">
-                                                <span class="chip">Sci-Fi</span>
-                                            </label>
-                                            <label class="chip-label">
-                                                <input type="checkbox" name="category" value="Horror">
-                                                <span class="chip">Horror</span>
-                                            </label>
-                                            <label class="chip-label">
-                                                <input type="checkbox" name="category" value="Thriller">
-                                                <span class="chip">Thriller</span>
-                                            </label>
-                                            <label class="chip-label">
-                                                <input type="checkbox" name="category" value="Romance">
-                                                <span class="chip">Romance</span>
-                                            </label>
-                                            <label class="chip-label">
-                                                <input type="checkbox" name="category" value="Fantasy">
-                                                <span class="chip">Fantasy</span>
-                                            </label>
-                                            <label class="chip-label">
-                                                <input type="checkbox" name="category" value="Documentary">
-                                                <span class="chip">Documentary</span>
-                                            </label>
+                                <!-- Right Column: Poster -->
+                                <div class="form-column poster-input">
+                                    <!-- Vertical Poster (Featured Thumbnail) -->
+                                    <div class="form-group">
+                                        <label>Movie Poster (9:16)</label>
+                                        <div id="featured-thumbnail-zone" class="upload-zone sm">
+                                            <div class="drop-content" id="featured-drop-content">
+                                                <i class="fas fa-image"></i>
+                                                <p>Drag or paste 9:16 poster</p>
+                                                <button type="button" class="btn btn-outline btn-sm"
+                                                    onclick="document.getElementById('featured-thumbnail-file').click()">Select
+                                                    File</button>
+                                            </div>
+                                            <input type="file" id="featured-thumbnail-file" accept="image/*"
+                                                class="hidden">
+                                            <div id="featured-thumb-placeholder" class="thumb-placeholder hidden">
+                                                Featured
+                                            </div>
+                                            <img id="featured-thumbnail-img" class="thumbnail-preview hidden">
+                                            <button type="button" id="remove-featured-btn" class="remove-btn hidden"
+                                                title="Remove Poster">×</button>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="form-group">
-                                <label for="description">Description</label>
-                                <div class="description-input-group">
-                                    <textarea id="description" rows="4" placeholder="Brief synopsis..."></textarea>
-                                    <button type="button" id="ai-generate-btn" class="btn btn-secondary btn-sm ai-btn">
-                                        ✨ AI Generate
-                                    </button>
+                            <!-- Progress & Actions -->
+                            <div class="form-footer">
+                                <div id="progress-container" class="progress-container hidden">
+                                    <span class="progress-label">Uploading...</span>
+                                    <div class="progress-track">
+                                        <div id="upload-progress-bar" class="progress-fill"></div>
+                                    </div>
+                                </div>
+                                <div class="action-buttons">
+                                    <button type="button" class="btn btn-ghost" id="cancel-form">Cancel</button>
+                                    <button type="submit" class="btn btn-primary" id="save-btn">Upload & Save</button>
                                 </div>
                             </div>
-                        </div>
-
-                        <!-- Progress & Actions -->
-                        <div class="form-footer">
-                            <div id="progress-container" class="progress-container hidden">
-                                <span class="progress-label">Uploading...</span>
-                                <div class="progress-track">
-                                    <div id="upload-progress-bar" class="progress-fill"></div>
-                                </div>
-                            </div>
-                            <div class="action-buttons">
-                                <button type="button" class="btn btn-ghost" id="cancel-form">Cancel</button>
-                                <button type="submit" class="btn btn-primary" id="save-btn">Upload & Save</button>
-                            </div>
-                        </div>
                     </form>
                 </div>
             </section>

@@ -459,16 +459,57 @@ body {
     color: var(--text-muted);
 }
 
-.form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+/* Form Layout Refactor */
+.layout-2-col {
+    display: flex;
+    gap: 30px;
+    align-items: flex-start;
+}
+
+.form-column {
+    display: flex;
+    flex-direction: column;
     gap: 20px;
 }
 
-.form-group {
+.form-column.main-inputs {
+    flex: 2;
+}
+
+.form-column.poster-input {
+    flex: 1;
+    position: sticky;
+    top: 20px;
+}
+
+.row-group {
+    display: flex;
+    gap: 20px;
+}
+
+.row-group .form-group {
+    flex: 1;
+}
+
+.layout-2-col .form-group {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    width: 100%;
+}
+
+@media (max-width: 768px) {
+    .layout-2-col {
+        flex-direction: column;
+    }
+
+    .form-column.poster-input {
+        width: 100%;
+        order: -1;
+        /* Show poster on top on mobile? Or bottom? Let's keep as logic flow */
+        order: 0;
+        position: static;
+    }
 }
 
 .form-footer {
