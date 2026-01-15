@@ -240,6 +240,7 @@ featuredInput.addEventListener('change', (e) => {
         featuredPreview.src = url;
         featuredPreview.classList.remove('hidden');
         featuredPlaceholder.classList.add('hidden');
+        document.getElementById('featured-drop-content').classList.add('hidden'); // Hide drop content
         removeFeaturedBtn.classList.remove('hidden');
     }
 });
@@ -250,9 +251,13 @@ removeFeaturedBtn.addEventListener('click', () => {
     featuredPreview.src = '';
     featuredPreview.classList.add('hidden');
     featuredPlaceholder.classList.remove('hidden');
+    document.getElementById('featured-drop-content').classList.remove('hidden'); // Show drop content
     removeFeaturedBtn.classList.add('hidden');
-    fetchedPosterUrl = null; // Clear OMDB poster if user removes it
+
+    // Also clear if it was from OMDB
+    fetchedPosterUrl = null;
 });
+
 
 // AI Generate Description
 aiGenerateBtn.addEventListener('click', generateDescription);
