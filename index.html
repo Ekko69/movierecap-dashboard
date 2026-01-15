@@ -271,7 +271,26 @@
             <section class="content-body">
                 <div class="filter-bar">
                     <input type="text" id="search-input" placeholder="Search movies..." class="search-input">
-                    <!-- Future filters could belong here -->
+                    <select id="category-filter" class="filter-select">
+                        <option value="all">All Categories</option>
+                        <option value="Action">Action</option>
+                        <option value="Top Picks">⭐ Top Picks</option>
+                        <option value="New">🆕 New</option>
+                        <option value="Comedy">Comedy</option>
+                        <option value="Drama">Drama</option>
+                        <option value="Sci-Fi">Sci-Fi</option>
+                        <option value="Horror">Horror</option>
+                        <option value="Thriller">Thriller</option>
+                        <option value="Romance">Romance</option>
+                        <option value="Fantasy">Fantasy</option>
+                        <option value="Documentary">Documentary</option>
+                    </select>
+                    <select id="sort-filter" class="filter-select">
+                        <option value="newest">Latest Added</option>
+                        <option value="oldest">Oldest Added</option>
+                        <option value="az">Title (A-Z)</option>
+                        <option value="za">Title (Z-A)</option>
+                    </select>
                 </div>
 
                 <div id="movies-container" class="movies-grid">
@@ -280,6 +299,12 @@
                         <div class="spinner"></div>
                         <p>Loading movies...</p>
                     </div>
+                </div>
+
+                <div class="pagination-container hidden" id="pagination-controls">
+                    <button id="prev-page" class="btn btn-secondary btn-sm" disabled>Previous</button>
+                    <span id="page-info" class="page-info">Page 1 of 1</span>
+                    <button id="next-page" class="btn btn-secondary btn-sm" disabled>Next</button>
                 </div>
             </section>
         </main>

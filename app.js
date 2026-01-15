@@ -228,8 +228,7 @@ captureBtn.addEventListener('click', captureThumbnail);
 // Form Submit
 movieForm.addEventListener('submit', handleFormSubmit);
 
-// Search
-searchInput.addEventListener('input', (e) => filterMovies(e.target.value));
+
 
 // Featured Thumbnail (Poster)
 featuredInput.addEventListener('change', (e) => {
@@ -977,25 +976,133 @@ async function handleFormSubmit(e) {
     }
 }
 
-// --- Realtime Listeners ---
+// --- Realtime Listeners & Pagination Logic ---
+
+// State
+let allMovies = [];
+let currentFilter = {
+    search: '',
+    category: 'all',
+    sort: 'newest'
+};
+let pagination = {
+    currentPage: 1,
+    itemsPerPage: 10
+};
+
+// Elements
+const categoryFilter = document.getElementById('category-filter');
+const sortFilter = document.getElementById('sort-filter');
+const paginationControls = document.getElementById('pagination-controls');
+const prevPageBtn = document.getElementById('prev-page');
+const nextPageBtn = document.getElementById('next-page');
+const pageInfo = document.getElementById('page-info');
+
+// Listeners
+searchInput.addEventListener('input', (e) => {
+    currentFilter.search = e.target.value.toLowerCase();
+    pagination.currentPage = 1; // Reset to page 1 on search
+    applyFiltersAndRender();
+});
+
+categoryFilter.addEventListener('change', (e) => {
+    currentFilter.category = e.target.value;
+    pagination.currentPage = 1;
+    applyFiltersAndRender();
+});
+
+sortFilter.addEventListener('change', (e) => {
+    currentFilter.sort = e.target.value;
+    applyFiltersAndRender();
+});
+
+prevPageBtn.addEventListener('click', () => {
+    if (pagination.currentPage > 1) {
+        pagination.currentPage--;
+        applyFiltersAndRender();
+    }
+});
+
+nextPageBtn.addEventListener('click', () => {
+    pagination.currentPage++;
+    applyFiltersAndRender();
+});
+
 
 const moviesRef = ref(db, 'movies');
 onValue(moviesRef, (snapshot) => {
-    moviesContainer.innerHTML = '';
     const data = snapshot.val();
-
     if (!data) {
-        moviesContainer.innerHTML = '<p class="loading-state">No movies found. Add one!</p>';
+        allMovies = [];
+    } else {
+        allMovies = Object.values(data);
+    }
+    applyFiltersAndRender();
+});
+
+function applyFiltersAndRender() {
+    let filtered = [...allMovies];
+
+    // 1. Filter by Search
+    if (currentFilter.search) {
+        filtered = filtered.filter(m => m.title.toLowerCase().includes(currentFilter.search));
+    }
+
+    // 2. Filter by Category
+    if (currentFilter.category !== 'all') {
+        filtered = filtered.filter(m => m.categories && m.categories.includes(currentFilter.category));
+    }
+
+    // 3. Sort
+    filtered.sort((a, b) => {
+        if (currentFilter.sort === 'newest') return (b.updatedAt || 0) - (a.updatedAt || 0);
+        if (currentFilter.sort === 'oldest') return (a.updatedAt || 0) - (b.updatedAt || 0);
+        if (currentFilter.sort === 'az') return a.title.localeCompare(b.title);
+        if (currentFilter.sort === 'za') return b.title.localeCompare(a.title);
+        return 0;
+    });
+
+    // 4. Pagination
+    const totalItems = filtered.length;
+    const totalPages = Math.ceil(totalItems / pagination.itemsPerPage) || 1;
+
+    // Ensure current page is valid
+    if (pagination.currentPage > totalPages) pagination.currentPage = totalPages;
+    if (pagination.currentPage < 1) pagination.currentPage = 1;
+
+    const startIndex = (pagination.currentPage - 1) * pagination.itemsPerPage;
+    const paginatedItems = filtered.slice(startIndex, startIndex + pagination.itemsPerPage);
+
+    // Render
+    renderMovies(paginatedItems, totalItems === 0);
+    updatePaginationUI(totalPages);
+}
+
+function renderMovies(movies, isEmpty) {
+    moviesContainer.innerHTML = '';
+
+    if (isEmpty) {
+        moviesContainer.innerHTML = '<p class="loading-state">No movies found matching your criteria.</p>';
         return;
     }
 
-    const movieList = Object.values(data).sort((a, b) => b.updatedAt - a.updatedAt);
-
-    movieList.forEach(movie => {
+    movies.forEach(movie => {
         const card = createMovieCard(movie);
         moviesContainer.appendChild(card);
     });
-});
+}
+
+function updatePaginationUI(totalPages) {
+    pageInfo.textContent = `Page ${pagination.currentPage} of ${totalPages}`;
+    prevPageBtn.disabled = pagination.currentPage === 1;
+    nextPageBtn.disabled = pagination.currentPage === totalPages;
+
+    if (totalPages > 1 || allMovies.length > 0) {
+        paginationControls.classList.remove('hidden');
+    } else {
+        paginationControls.classList.add('hidden');
+    }
+}
 
 function createMovieCard(movie) {
     const categoriesDisplay = movie.categories && Array.isArray(movie.categories)
