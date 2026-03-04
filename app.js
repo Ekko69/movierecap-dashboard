@@ -52,6 +52,23 @@ const storage = getStorage(app);
 // API Key is now handled on the server side (Vercel Functions)
 const AI_API_URL = '/api/ai-service';
 
+// Duplicate Detection Helpers
+function normalizeTitle(title) {
+    return (title || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function buildDuplicateKey(title, year) {
+    const t = normalizeTitle(title);
+    const y = year && year !== '' ? String(year).trim() : 'N/A';
+    return `${t}::${y}`;
+}
+
+let existingMovieKeys = new Set();
+
 
 // DOM Elements
 const movieFormPanel = document.getElementById('movie-form-panel');
@@ -79,6 +96,139 @@ const featuredPlaceholder = document.getElementById('featured-thumb-placeholder'
 const removeFeaturedBtn = document.getElementById('remove-featured-btn');
 const featuredDropContent = document.getElementById('featured-drop-content');
 const posterSyncStatus = document.getElementById('poster-sync-status');
+
+// Batch import
+const batchInput = document.getElementById('batch-video-files');
+const batchQueueEl = document.getElementById('batch-queue');
+const batchProgressBar = document.getElementById('batch-progress-bar');
+let batchQueue = [];
+
+batchInput?.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files || []);
+    batchQueue = files.map((file) => ({ id: crypto.randomUUID(), file, status: 'queued' }));
+    batchQueueEl.textContent = batchQueue.length ? batchQueue.length + ' file(s) queued' : 'No files queued';
+});
+
+// Start Batch
+const startBatchBtn = document.getElementById('start-batch-btn');
+startBatchBtn?.addEventListener('click', () => {
+    startBatchBtn.disabled = true;
+    processBatch(2).finally(() => {
+        startBatchBtn.disabled = false;
+        updateBatchUI();
+    });
+});
+
+// Batch processing pipeline
+async function processBatch(concurrency = 2) {
+    const queue = batchQueue.filter(item => item.status === 'queued');
+    if (!queue.length) return;
+
+    let running = 0;
+    let index = 0;
+
+    async function runNext() {
+        if (index >= queue.length) return;
+        const item = queue[index++];
+        running++;
+        item.status = 'processing';
+        updateBatchUI();
+        try {
+            await processBatchItem(item);
+            item.status = 'completed';
+        } catch (e) {
+            item.status = 'failed';
+            item.error = e.message;
+        }
+        running--;
+        updateBatchUI();
+        if (index < queue.length) runNext();
+    }
+
+    for (let i = 0; i < concurrency && i < queue.length; i++) runNext();
+}
+
+async function processBatchItem(item) {
+    // Upload video
+    const movieId = crypto.randomUUID();
+    item.movieId = movieId;
+    const videoRef = storageRef(storage, `videos/${movieId}.mp4`);
+    await uploadBytesResumable(videoRef, item.file);
+    const url = await getDownloadURL(videoRef);
+    item.videoUrl = url;
+    item.status = 'uploaded';
+    updateBatchUI();
+
+    // Transcription step
+    item.status = 'transcribing';
+    updateBatchUI();
+    const transcriptId = await transcribeAudio(url);
+    const transcript = await pollTranscription(transcriptId, () => {});
+    item.transcriptText = transcript.text;
+    item.status = 'transcribed';
+    updateBatchUI();
+
+    // Metadata extraction
+    item.status = 'extracting-metadata';
+    updateBatchUI();
+    const sample = item.transcriptText.substring(0, 5000);
+    const metadata = await extractMovieMetadata(sample);
+    item.metadata = metadata;
+    item.status = 'metadata-extracted';
+    updateBatchUI();
+
+    // OMDb enrichment
+    item.status = 'omdb';
+    updateBatchUI();
+    const { title, year } = metadata;
+    const omdb = await fetchMovieFromOMDB(title, year);
+    if (omdb) {
+        item.omdb = omdb;
+        if (omdb.Poster && omdb.Poster !== 'N/A') {
+            item.posterUrl = omdb.Poster;
+        }
+    }
+    item.status = 'omdb-done';
+    updateBatchUI();
+
+    // Save to database
+    item.status = 'saving';
+    updateBatchUI();
+    const movieData = {
+        id: item.movieId,
+        title: metadata.title,
+        year: metadata.year,
+        description: metadata.description,
+        categories: metadata.genres || [],
+        videoURL: item.videoUrl,
+        featuredThumbnail: item.posterUrl || null,
+        updatedAt: Date.now()
+    };
+    const movieRef = ref(db, 'movies/' + item.movieId);
+    await set(movieRef, movieData);
+    item.status = 'completed';
+    updateBatchUI();
+}
+
+function updateBatchUI() {
+    batchQueueEl.innerHTML = '';
+    if (!batchQueue.length) return;
+    const completed = batchQueue.filter(i => i.status === 'completed').length;
+    const total = batchQueue.length;
+    if (total > 0) {
+        const pct = Math.round((completed / total) * 100);
+        batchProgressBar.style.width = pct + '%';
+    }
+    for (const item of batchQueue) {
+        const li = document.createElement('li');
+        li.textContent = `${item.file.name} – ${item.status}`;
+        batchQueueEl.appendChild(li);
+    }
+    const summary = document.createElement('li');
+    summary.style.marginTop = '8px';
+    summary.textContent = `Progress: ${completed}/${total} completed`;
+    batchQueueEl.appendChild(summary);
+}
 
 // Featured Thumbnail Elements
 
@@ -926,6 +1076,13 @@ async function handleFormSubmit(e) {
 
     let title = document.getElementById('title').value;
     let year = document.getElementById('year').value;
+
+    // Duplicate detection
+    const dupKey = buildDuplicateKey(title, year);
+    if (!editingMovieId && existingMovieKeys.has(dupKey)) {
+        const proceed = confirm("A movie with the same title and year already exists. Save anyway?");
+        if (!proceed) return;
+    }
     const duration = document.getElementById('duration').value;
     let description = document.getElementById('description').value;
 

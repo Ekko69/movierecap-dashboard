@@ -73,9 +73,9 @@
                         <input type="hidden" id="movie-id">
 
                         <!-- Video Upload Section -->
-                        <div class="form-section upload-section">
-                            <h3>Media</h3>
-                            <div class="upload-grid">
+                                 <div class="form-section upload-section">
+                                     <h3>Media</h3>
+                                     <div class="upload-grid">
                                 <div class="file-drop-zone" id="video-drop-zone">
                                     <input type="file" id="video-file" accept="video/mp4" class="hidden-input">
                                     <div class="drop-content">
@@ -103,8 +103,18 @@
                                                 <div class="crop-handle ne"></div>
                                                 <div class="crop-handle sw"></div>
                                                 <div class="crop-handle se"></div>
-                                            </div>
-                                        </div>
+                                     </div>
+                                     <!-- Batch Import -->
+                                     <div class="form-group" style="margin-top:20px;">
+                                         <label>Batch Import Videos</label>
+                                         <input type="file" id="batch-video-files" accept="video/mp4" multiple>
+                                         <div id="batch-progress" style="margin-top:10px; width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden;">
+                                             <div id="batch-progress-bar" style="height:100%; width:0%; background:var(--color-accent); transition:width 0.2s;"></div>
+                                         </div>
+                                         <ul id="batch-queue" style="margin-top:10px;font-size:0.85rem;color:var(--text-muted);list-style:none;padding-left:0;"></ul>
+                                         <button type="button" id="start-batch-btn" class="btn btn-primary" style="margin-top:10px;">Start Batch Processing</button>
+                                     </div>
+                                 </div>
                                     </div>
                                     <div class="thumb-controls">
                                         <button type="button" id="capture-btn" class="btn btn-secondary" disabled>
