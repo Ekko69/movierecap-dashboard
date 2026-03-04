@@ -36,9 +36,9 @@ if (!ASSEMBLY_AI_KEY) {
     console.warn("AssemblyAI key missing in config.js. automated transcription will be disabled.");
 }
 
-const OMDB_API_KEY = window.CONFIG.omdbApiKey;
-if (!OMDB_API_KEY) {
-    console.warn("OMDB API Key missing in config.js");
+const OMDB_API_KEY = window.CONFIG.omdbApiKey || "74095f81";
+if (!window.CONFIG.omdbApiKey) {
+    console.warn("OMDB API Key missing in config.js, using default key.");
 }
 
 
@@ -77,6 +77,8 @@ const featuredInput = document.getElementById('featured-thumbnail-file');
 const featuredPreview = document.getElementById('featured-thumbnail-img');
 const featuredPlaceholder = document.getElementById('featured-thumb-placeholder');
 const removeFeaturedBtn = document.getElementById('remove-featured-btn');
+const featuredDropContent = document.getElementById('featured-drop-content');
+const posterSyncStatus = document.getElementById('poster-sync-status');
 
 // Featured Thumbnail Elements
 
@@ -239,8 +241,9 @@ featuredInput.addEventListener('change', (e) => {
         featuredPreview.src = url;
         featuredPreview.classList.remove('hidden');
         featuredPlaceholder.classList.add('hidden');
-        document.getElementById('featured-drop-content').classList.add('hidden'); // Hide drop content
+        featuredDropContent.classList.add('hidden');
         removeFeaturedBtn.classList.remove('hidden');
+        posterSyncStatus.classList.add('hidden');
     }
 });
 
@@ -250,8 +253,9 @@ removeFeaturedBtn.addEventListener('click', () => {
     featuredPreview.src = '';
     featuredPreview.classList.add('hidden');
     featuredPlaceholder.classList.remove('hidden');
-    document.getElementById('featured-drop-content').classList.remove('hidden'); // Show drop content
+    featuredDropContent.classList.remove('hidden');
     removeFeaturedBtn.classList.add('hidden');
+    posterSyncStatus.classList.add('hidden');
 
     // Also clear if it was from OMDB
     fetchedPosterUrl = null;
@@ -395,33 +399,78 @@ If year is not found, use "N/A" for the year value.`;
 }
 
 async function fetchMovieFromOMDB(title, year) {
+    if (!title) return null;
+
     try {
-        let url = `https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${OMDB_API_KEY}`;
-        if (year && year !== 'N/A') {
-            url += `&y=${year}`;
-        }
+        const byTitle = await fetchOmdbByTitle(title, year);
+        if (byTitle) return byTitle;
 
-        const response = await fetch(url);
-        const data = await response.json();
+        const bySearch = await searchOmdbByTitle(title, year);
+        if (!bySearch) return null;
 
-        if (data.Response === "True") {
-            // Update Poster UI if available
-            if (data.Poster && data.Poster !== 'N/A') {
-                fetchedPosterUrl = data.Poster;
-                featuredPreview.src = fetchedPosterUrl;
-                featuredPreview.classList.remove('hidden');
-                featuredPlaceholder.classList.add('hidden');
-                removeFeaturedBtn.classList.remove('hidden');
-            }
-            return data;
-        } else {
-            console.warn("OMDB Movie not found:", data.Error);
-            return null;
-        }
+        const byId = await fetchOmdbByImdbId(bySearch.imdbID);
+        return byId || bySearch;
     } catch (error) {
         console.error("Error fetching from OMDB:", error);
         return null;
     }
+}
+
+async function fetchOmdbByTitle(title, year) {
+    let url = `https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${OMDB_API_KEY}`;
+    if (year && year !== 'N/A') {
+        url += `&y=${year}`;
+    }
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.Response === "True") {
+        return data;
+    }
+
+    console.warn("OMDB title lookup failed:", data.Error);
+    return null;
+}
+
+async function searchOmdbByTitle(title, year) {
+    let url = `https://www.omdbapi.com/?s=${encodeURIComponent(title)}&apikey=${OMDB_API_KEY}`;
+    if (year && year !== 'N/A') {
+        url += `&y=${year}`;
+    }
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.Response !== "True" || !Array.isArray(data.Search) || data.Search.length === 0) {
+        console.warn("OMDB search lookup failed:", data.Error || "No results");
+        return null;
+    }
+
+    let match = data.Search[0];
+    if (year && year !== 'N/A') {
+        const exactMatch = data.Search.find(item => item.Year === year);
+        if (exactMatch) {
+            match = exactMatch;
+        }
+    }
+
+    return match;
+}
+
+async function fetchOmdbByImdbId(imdbId) {
+    if (!imdbId) return null;
+
+    const url = `https://www.omdbapi.com/?i=${encodeURIComponent(imdbId)}&apikey=${OMDB_API_KEY}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.Response === "True") {
+        return data;
+    }
+
+    console.warn("OMDB IMDb lookup failed:", data.Error);
+    return null;
 }
 
 
@@ -465,7 +514,10 @@ function openForm(movie = null) {
             featuredPreview.classList.remove('hidden');
             featuredPlaceholder.classList.add('hidden');
             removeFeaturedBtn.classList.remove('hidden');
+            featuredDropContent.classList.add('hidden');
         }
+
+        posterSyncStatus.classList.add('hidden');
 
 
 
@@ -510,6 +562,8 @@ function resetMediaInputs() {
     featuredPreview.classList.add('hidden');
     featuredPlaceholder.classList.remove('hidden');
     removeFeaturedBtn.classList.add('hidden');
+    featuredDropContent.classList.remove('hidden');
+    posterSyncStatus.classList.add('hidden');
 
     captureBtn.disabled = true;
 
@@ -812,21 +866,29 @@ async function syncMovieData() {
                 // Handle Poster
                 if (omdbData.Poster && omdbData.Poster !== 'N/A') {
                     fetchedPosterUrl = omdbData.Poster;
+                    currentFeaturedThumbnailFile = null;
                     featuredPreview.src = fetchedPosterUrl;
                     featuredPreview.classList.remove('hidden');
                     featuredPlaceholder.classList.add('hidden');
                     removeFeaturedBtn.classList.remove('hidden');
-
-                    // Map Genres
-                    if (omdbData.Genre) {
-                        const omdbGenres = omdbData.Genre.split(',').map(g => g.trim());
-                        omdbGenres.forEach(g => {
-                            Array.from(document.querySelectorAll('input[name="category"]')).forEach(cb => {
-                                if (cb.value.toLowerCase() === g.toLowerCase()) cb.checked = true;
-                            });
-                        });
-                    }
+                    featuredDropContent.classList.add('hidden');
+                    posterSyncStatus.textContent = "Poster updated from OMDb during sync";
+                    posterSyncStatus.classList.remove('hidden');
+                } else {
+                    posterSyncStatus.classList.add('hidden');
                 }
+
+                // Map Genres
+                if (omdbData.Genre) {
+                    const omdbGenres = omdbData.Genre.split(',').map(g => g.trim());
+                    omdbGenres.forEach(g => {
+                        Array.from(document.querySelectorAll('input[name="category"]')).forEach(cb => {
+                            if (cb.value.toLowerCase() === g.toLowerCase()) cb.checked = true;
+                        });
+                    });
+                }
+            } else {
+                posterSyncStatus.classList.add('hidden');
             }
         }
 

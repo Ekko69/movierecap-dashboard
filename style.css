@@ -422,6 +422,19 @@ body {
     margin: 0;
 }
 
+.poster-sync-status {
+    margin: 6px 0 10px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    padding: 6px 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .thumb-controls {
     display: flex;
     flex-direction: column;
