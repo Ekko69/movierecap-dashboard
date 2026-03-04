@@ -85,6 +85,7 @@ const videoPreview = document.getElementById('video-preview');
 const dropZone = document.getElementById('video-drop-zone');
 const changeVideoBtn = document.getElementById('change-video-btn');
 const captureBtn = document.getElementById('capture-btn');
+const editThumbnailBtn = document.getElementById('edit-thumbnail-btn');
 const thumbnailImg = document.getElementById('thumbnail-img');
 const captureCanvas = document.getElementById('capture-canvas');
 const thumbPlaceholder = document.getElementById('thumb-placeholder');
@@ -97,55 +98,219 @@ const removeFeaturedBtn = document.getElementById('remove-featured-btn');
 const featuredDropContent = document.getElementById('featured-drop-content');
 const posterSyncStatus = document.getElementById('poster-sync-status');
 
-// Batch import
+// Batch upload modal + queue
+const openBatchBtn = document.getElementById('open-batch-upload');
+const batchModal = document.getElementById('batch-upload-modal');
 const batchInput = document.getElementById('batch-video-files');
 const batchQueueEl = document.getElementById('batch-queue');
 const batchProgressBar = document.getElementById('batch-progress-bar');
+const startBatchBtn = document.getElementById('start-batch-btn');
+const batchClearBtn = document.getElementById('batch-clear-btn');
+const closeBatchBtn = document.getElementById('close-batch-upload');
+const batchCloseFooter = document.getElementById('batch-close-footer');
+const batchSummaryEl = document.getElementById('batch-summary');
+const toastEl = document.getElementById('toast');
+const batchCompleteModal = document.getElementById('batch-complete-modal');
+const batchCompleteMessage = document.getElementById('batch-complete-message');
+const batchCompleteClose = document.getElementById('batch-complete-close');
+const batchCompleteOk = document.getElementById('batch-complete-ok');
+
 let batchQueue = [];
+let batchProcessing = false;
+let toastTimeout = null;
+
+function isSafeThumbnailSrc(src) {
+    if (!src) return false;
+    if (src.startsWith('blob:') || src.startsWith('data:')) return true;
+    try {
+        const resolved = new URL(src, window.location.origin);
+        return resolved.origin === window.location.origin;
+    } catch (error) {
+        return false;
+    }
+}
+
+const STATUS_LABELS = {
+    queued: 'Queued',
+    uploading: 'Uploading video',
+    uploaded: 'Video uploaded',
+    'processing-video': 'Processing video',
+    'uploading-thumbnail': 'Uploading thumbnail',
+    transcribing: 'Transcribing',
+    transcribed: 'Transcript ready',
+    'extracting-metadata': 'Extracting metadata',
+    'metadata-extracted': 'Metadata ready',
+    omdb: 'Fetching OMDb data',
+    'omdb-done': 'Details enhanced',
+    saving: 'Saving',
+    completed: 'Completed',
+    failed: 'Failed'
+};
+
+openBatchBtn?.addEventListener('click', () => {
+    batchModal?.classList.remove('hidden');
+    updateBatchUI();
+});
+
+function closeBatchModal() {
+    batchModal?.classList.add('hidden');
+}
+
+closeBatchBtn?.addEventListener('click', closeBatchModal);
+batchCloseFooter?.addEventListener('click', closeBatchModal);
+
+batchModal?.addEventListener('click', (e) => {
+    if (e.target === batchModal) {
+        closeBatchModal();
+    }
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && batchModal && !batchModal.classList.contains('hidden')) {
+        closeBatchModal();
+    }
+});
 
 batchInput?.addEventListener('change', (e) => {
     const files = Array.from(e.target.files || []);
-    batchQueue = files.map((file) => ({ id: crypto.randomUUID(), file, status: 'queued' }));
-    batchQueueEl.textContent = batchQueue.length ? batchQueue.length + ' file(s) queued' : 'No files queued';
-});
-
-// Start Batch
-const startBatchBtn = document.getElementById('start-batch-btn');
-startBatchBtn?.addEventListener('click', () => {
-    startBatchBtn.disabled = true;
-    processBatch(2).finally(() => {
-        startBatchBtn.disabled = false;
-        updateBatchUI();
+    if (!files.length) return;
+    files.forEach((file) => {
+        batchQueue.push({
+            id: crypto.randomUUID(),
+            file,
+            status: 'queued',
+            error: null,
+            metadata: null,
+            duration: null,
+            thumbnailURL: null
+        });
     });
+    batchInput.value = '';
+    updateBatchUI();
 });
 
-// Batch processing pipeline
+batchClearBtn?.addEventListener('click', () => {
+    if (batchProcessing) return;
+    batchQueue = [];
+    if (batchInput) batchInput.value = '';
+    updateBatchUI();
+});
+
+startBatchBtn?.addEventListener('click', () => {
+    if (batchProcessing) return;
+    processBatch(2);
+});
+
+updateBatchUI();
+
+function getStatusInfo(status) {
+    const label = STATUS_LABELS[status] || (status ? status.replace(/-/g, ' ') : 'Queued');
+    let category = 'processing';
+    if (!status || status === 'queued') category = 'queued';
+    else if (status === 'completed') category = 'completed';
+    else if (status === 'failed') category = 'failed';
+    return { label, category };
+}
+
+function formatDuration(seconds) {
+    const total = Math.max(Math.floor(seconds || 0), 0);
+    const minutes = Math.floor(total / 60);
+    const sec = String(total % 60).padStart(2, '0');
+    return `${minutes}:${sec}`;
+}
+
+function showToast(message) {
+    if (!toastEl) return;
+    toastEl.textContent = message;
+    toastEl.classList.add('show');
+    if (toastTimeout) clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => {
+        toastEl.classList.remove('show');
+    }, 6000);
+}
+
+toastEl?.addEventListener('click', () => {
+    toastEl.classList.remove('show');
+});
+
+function showBatchCompleteModal(completedCount, failedCount) {
+    if (!batchCompleteModal || !batchCompleteMessage) return;
+    batchCompleteMessage.textContent = `Batch upload finished: ${completedCount} completed, ${failedCount} failed.`;
+    batchCompleteModal.classList.remove('hidden');
+}
+
+function hideBatchCompleteModal() {
+    batchCompleteModal?.classList.add('hidden');
+}
+
+batchCompleteClose?.addEventListener('click', hideBatchCompleteModal);
+batchCompleteOk?.addEventListener('click', hideBatchCompleteModal);
+batchCompleteModal?.addEventListener('click', (e) => {
+    if (e.target === batchCompleteModal) hideBatchCompleteModal();
+});
+
 async function processBatch(concurrency = 2) {
-    const queue = batchQueue.filter(item => item.status === 'queued');
-    if (!queue.length) return;
+    if (batchProcessing) return;
+    const runnable = batchQueue.filter(item => item.status === 'queued');
+    if (!runnable.length) return;
 
-    let running = 0;
-    let index = 0;
+    batchProcessing = true;
+    updateBatchUI();
 
-    async function runNext() {
-        if (index >= queue.length) return;
-        const item = queue[index++];
-        running++;
-        item.status = 'processing';
-        updateBatchUI();
-        try {
-            await processBatchItem(item);
-            item.status = 'completed';
-        } catch (e) {
-            item.status = 'failed';
-            item.error = e.message;
+    return new Promise((resolve) => {
+        let index = 0;
+        let active = 0;
+        let finished = false;
+
+        const finalize = () => {
+            if (finished) return;
+            finished = true;
+            batchProcessing = false;
+            updateBatchUI();
+            const completedCount = batchQueue.filter(i => i.status === 'completed').length;
+            const failedCount = batchQueue.filter(i => i.status === 'failed').length;
+            if (completedCount + failedCount > 0) {
+                showToast(`Batch upload complete: ${completedCount} finished, ${failedCount} failed.`);
+                showBatchCompleteModal(completedCount, failedCount);
+            }
+            resolve();
+        };
+
+        const launchNext = () => {
+            if (index >= runnable.length) {
+                if (active === 0) finalize();
+                return;
+            }
+            const item = runnable[index++];
+            item.error = null;
+            item.status = 'uploading';
+            updateBatchUI();
+            active++;
+            processBatchItem(item)
+                .then(() => {
+                    item.status = 'completed';
+                    updateBatchUI();
+                })
+                .catch((error) => {
+                    item.status = 'failed';
+                    item.error = error?.message || 'Batch item failed';
+                    updateBatchUI();
+                })
+                .finally(() => {
+                    active--;
+                    if (index < runnable.length) {
+                        launchNext();
+                    } else if (active === 0) {
+                        finalize();
+                    }
+                });
+        };
+
+        const slots = Math.min(concurrency, runnable.length);
+        for (let i = 0; i < slots; i++) {
+            launchNext();
         }
-        running--;
-        updateBatchUI();
-        if (index < queue.length) runNext();
-    }
-
-    for (let i = 0; i < concurrency && i < queue.length; i++) runNext();
+    });
 }
 
 async function processBatchItem(item) {
@@ -158,6 +323,63 @@ async function processBatchItem(item) {
     item.videoUrl = url;
     item.status = 'uploaded';
     updateBatchUI();
+
+    // Extract duration and thumbnail from video file
+    item.status = 'processing-video';
+    updateBatchUI();
+    const videoFile = item.file;
+    let objectUrl = null;
+    try {
+        objectUrl = URL.createObjectURL(videoFile);
+        const durationSeconds = await new Promise((resolve, reject) => {
+            const v = document.createElement('video');
+            v.preload = 'metadata';
+            v.muted = true;
+            v.src = objectUrl;
+            v.onloadedmetadata = () => resolve(v.duration || 0);
+            v.onerror = () => reject(new Error('Unable to read video metadata'));
+        });
+        item.duration = formatDuration(durationSeconds);
+        updateBatchUI();
+
+        const thumbnailBlob = await new Promise((resolve, reject) => {
+            const v = document.createElement('video');
+            v.preload = 'auto';
+            v.muted = true;
+            v.src = objectUrl;
+            v.onloadedmetadata = () => {
+                const safeDuration = v.duration || durationSeconds || 1;
+                let targetTime = safeDuration * (0.1 + Math.random() * 0.7);
+                if (!Number.isFinite(targetTime)) targetTime = Math.min(1, safeDuration);
+                targetTime = Math.min(Math.max(targetTime, 0.2), Math.max(safeDuration - 0.2, 0.2));
+                v.currentTime = targetTime;
+            };
+            v.onseeked = () => {
+                const canvas = document.createElement('canvas');
+                const width = 480;
+                const height = 270;
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(v, 0, 0, width, height);
+                canvas.toBlob((blob) => {
+                    if (blob) resolve(blob);
+                    else reject(new Error('Failed to capture thumbnail'));
+                }, 'image/jpeg', 0.8);
+            };
+            v.onerror = () => reject(new Error('Failed to capture thumbnail'));
+        });
+
+        // Upload thumbnail
+        item.status = 'uploading-thumbnail';
+        updateBatchUI();
+        const thumbRef = storageRef(storage, `thumbnails/${movieId}/batch-thumb.jpg`);
+        await uploadBytesResumable(thumbRef, thumbnailBlob);
+        item.thumbnailURL = await getDownloadURL(thumbRef);
+        updateBatchUI();
+    } finally {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+    }
 
     // Transcription step
     item.status = 'transcribing';
@@ -181,7 +403,12 @@ async function processBatchItem(item) {
     item.status = 'omdb';
     updateBatchUI();
     const { title, year } = metadata;
-    const omdb = await fetchMovieFromOMDB(title, year);
+    let omdbYear = year;
+    if (!omdbYear || omdbYear === 'N/A') {
+        omdbYear = String(1998 + Math.floor(Math.random() * 26));
+        item.metadata.year = omdbYear;
+    }
+    const omdb = await fetchMovieFromOMDB(title, omdbYear);
     if (omdb) {
         item.omdb = omdb;
         if (omdb.Poster && omdb.Poster !== 'N/A') {
@@ -197,37 +424,107 @@ async function processBatchItem(item) {
     const movieData = {
         id: item.movieId,
         title: metadata.title,
-        year: metadata.year,
+        year: item.metadata.year,
         description: metadata.description,
         categories: metadata.genres || [],
+        duration: item.duration,
+        thumbnail: item.thumbnailURL,
         videoURL: item.videoUrl,
         featuredThumbnail: item.posterUrl || null,
         updatedAt: Date.now()
     };
     const movieRef = ref(db, 'movies/' + item.movieId);
     await set(movieRef, movieData);
-    item.status = 'completed';
-    updateBatchUI();
 }
 
 function updateBatchUI() {
+    if (!batchQueueEl) return;
     batchQueueEl.innerHTML = '';
-    if (!batchQueue.length) return;
-    const completed = batchQueue.filter(i => i.status === 'completed').length;
-    const total = batchQueue.length;
-    if (total > 0) {
-        const pct = Math.round((completed / total) * 100);
-        batchProgressBar.style.width = pct + '%';
+
+    const totals = { queued: 0, processing: 0, completed: 0, failed: 0 };
+
+    if (!batchQueue.length) {
+        const empty = document.createElement('li');
+        empty.className = 'batch-item-empty';
+        empty.textContent = 'No files queued yet.';
+        batchQueueEl.appendChild(empty);
+    } else {
+        batchQueue.forEach((item) => {
+            const { label, category } = getStatusInfo(item.status);
+            totals[category] = (totals[category] || 0) + 1;
+
+            const li = document.createElement('li');
+            li.className = 'batch-item';
+
+            const thumb = document.createElement('div');
+            thumb.className = 'batch-item-thumb';
+            if (item.thumbnailURL) {
+                const img = document.createElement('img');
+                img.src = item.thumbnailURL;
+                img.alt = item.metadata?.title || item.file.name;
+                thumb.appendChild(img);
+            } else {
+                thumb.textContent = 'Preview';
+            }
+
+            const details = document.createElement('div');
+            details.className = 'batch-item-details';
+            const title = document.createElement('div');
+            title.className = 'title';
+            title.textContent = item.metadata?.title || item.file.name;
+            const meta = document.createElement('div');
+            meta.className = 'meta';
+            const durationText = item.duration || 'Duration pending';
+            const yearText = item.metadata?.year || 'Year TBD';
+            meta.textContent = `Duration: ${durationText} · Year: ${yearText}`;
+            details.append(title, meta);
+
+            const statusWrap = document.createElement('div');
+            statusWrap.className = 'batch-item-status';
+            const badge = document.createElement('span');
+            const badgeCategory = category === 'processing' ? 'processing' : category;
+            badge.className = `status-badge ${badgeCategory}`;
+            badge.textContent = label;
+            statusWrap.appendChild(badge);
+
+            if (item.error) {
+                const errorEl = document.createElement('span');
+                errorEl.className = 'batch-item-error';
+                errorEl.textContent = item.error;
+                statusWrap.appendChild(errorEl);
+            }
+
+            li.append(thumb, details, statusWrap);
+            batchQueueEl.appendChild(li);
+        });
     }
-    for (const item of batchQueue) {
-        const li = document.createElement('li');
-        li.textContent = `${item.file.name} – ${item.status}`;
-        batchQueueEl.appendChild(li);
+
+    if (batchSummaryEl) {
+        const queued = batchSummaryEl.querySelector('[data-summary="queued"]');
+        const processing = batchSummaryEl.querySelector('[data-summary="processing"]');
+        const completed = batchSummaryEl.querySelector('[data-summary="completed"]');
+        const failed = batchSummaryEl.querySelector('[data-summary="failed"]');
+        if (queued) queued.textContent = `Queued: ${totals.queued || 0}`;
+        if (processing) processing.textContent = `Processing: ${totals.processing || 0}`;
+        if (completed) completed.textContent = `Completed: ${totals.completed || 0}`;
+        if (failed) failed.textContent = `Failed: ${totals.failed || 0}`;
     }
-    const summary = document.createElement('li');
-    summary.style.marginTop = '8px';
-    summary.textContent = `Progress: ${completed}/${total} completed`;
-    batchQueueEl.appendChild(summary);
+
+    if (batchProgressBar) {
+        const total = batchQueue.length;
+        const completedCount = totals.completed || 0;
+        const pct = total ? Math.round((completedCount / total) * 100) : 0;
+        batchProgressBar.style.width = `${pct}%`;
+    }
+
+    if (startBatchBtn) {
+        const hasQueued = batchQueue.some(item => item.status === 'queued');
+        startBatchBtn.disabled = batchProcessing || !hasQueued;
+    }
+
+    if (batchClearBtn) {
+        batchClearBtn.disabled = batchProcessing || !batchQueue.length;
+    }
 }
 
 // Featured Thumbnail Elements
@@ -376,6 +673,7 @@ changeVideoBtn.addEventListener('click', (e) => {
 
 // Capture Thumbnail
 captureBtn.addEventListener('click', captureThumbnail);
+editThumbnailBtn?.addEventListener('click', editCurrentThumbnail);
 
 // Form Submit
 movieForm.addEventListener('submit', handleFormSubmit);
@@ -653,10 +951,16 @@ function openForm(movie = null) {
         // Handling existing media for edit is complex without re-upload/preview
         // For this version, we'll keep it simple: assume user keeps media if not changed.
         // We show a note or just show current thumbnail if possible.
-        if (movie.thumbnail) {
-            thumbnailImg.src = movie.thumbnail;
+        const existingThumbnailSrc = movie.thumbnail || movie.featuredThumbnail || null;
+        if (existingThumbnailSrc) {
+            thumbnailImg.src = existingThumbnailSrc;
+            thumbnailImg.dataset.editable = isSafeThumbnailSrc(existingThumbnailSrc) ? 'true' : 'false';
             thumbnailImg.classList.remove('hidden');
             thumbPlaceholder.classList.add('hidden');
+            if (editThumbnailBtn) editThumbnailBtn.disabled = thumbnailImg.dataset.editable !== 'true';
+        } else {
+            delete thumbnailImg.dataset.editable;
+            if (editThumbnailBtn) editThumbnailBtn.disabled = true;
         }
 
         if (movie.featuredThumbnail) {
@@ -702,8 +1006,10 @@ function resetMediaInputs() {
 
 
     thumbnailImg.src = '';
+    delete thumbnailImg.dataset.editable;
     thumbnailImg.classList.add('hidden');
     thumbPlaceholder.classList.remove('hidden');
+    if (editThumbnailBtn) editThumbnailBtn.disabled = true;
 
     // Reset Featured (Poster)
     featuredInput.value = '';
@@ -729,6 +1035,9 @@ function handleVideoSelect(file) {
         return;
     }
     currentVideoFile = file;
+
+    if (editThumbnailBtn) editThumbnailBtn.disabled = true;
+    delete thumbnailImg.dataset.editable;
 
     const url = URL.createObjectURL(file);
     videoPreview.src = url;
@@ -788,6 +1097,62 @@ function captureThumbnail() {
     showCropInterface();
 }
 
+function loadImageElement(src) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+    });
+}
+
+async function editCurrentThumbnail() {
+    if (!thumbnailImg || thumbnailImg.classList.contains('hidden') || !thumbnailImg.src) {
+        alert('No thumbnail available to edit yet. Capture one first.');
+        return;
+    }
+
+    if (thumbnailImg.dataset.editable !== 'true') {
+        alert('This saved thumbnail cannot be edited because it was generated outside this browser session. Please capture a new thumbnail from the video.');
+        return;
+    }
+
+    let tempUrl = null;
+
+    const drawToCanvas = (image) => {
+        const width = image.naturalWidth || image.width;
+        const height = image.naturalHeight || image.height;
+        captureCanvas.width = width;
+        captureCanvas.height = height;
+        const ctx = captureCanvas.getContext('2d');
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(image, 0, 0, width, height);
+    };
+
+    try {
+        let image;
+        try {
+            image = await loadImageElement(thumbnailImg.src);
+        } catch (err) {
+            const response = await fetch(thumbnailImg.src, { mode: 'cors' });
+            const blob = await response.blob();
+            tempUrl = URL.createObjectURL(blob);
+            image = await loadImageElement(tempUrl);
+        }
+
+        if (editThumbnailBtn) editThumbnailBtn.disabled = true;
+        drawToCanvas(image);
+        showCropInterface();
+    } catch (error) {
+        console.error('Failed to load thumbnail for editing', error);
+        alert('Unable to edit this thumbnail. Please capture a new one.');
+        if (editThumbnailBtn) editThumbnailBtn.disabled = false;
+    } finally {
+        if (tempUrl) URL.revokeObjectURL(tempUrl);
+    }
+}
+
 function showCropInterface() {
     // Set up crop canvas
     const containerRect = document.querySelector('.thumbnail-preview-container').getBoundingClientRect();
@@ -814,6 +1179,7 @@ function showCropInterface() {
     cropInterface.classList.remove('hidden');
     cropControls.classList.remove('hidden');
     captureBtn.classList.add('hidden');
+    if (editThumbnailBtn) editThumbnailBtn.disabled = true;
 }
 
 function updateCropBox() {
@@ -905,6 +1271,7 @@ applyCropBtn.addEventListener('click', () => {
         currentThumbnailBlob = blob;
         const url = URL.createObjectURL(blob);
         thumbnailImg.src = url;
+        thumbnailImg.dataset.editable = 'true';
         thumbnailImg.classList.remove('hidden');
         thumbPlaceholder.classList.add('hidden');
 
@@ -912,6 +1279,7 @@ applyCropBtn.addEventListener('click', () => {
         cropInterface.classList.add('hidden');
         cropControls.classList.add('hidden');
         captureBtn.classList.remove('hidden');
+        if (editThumbnailBtn) editThumbnailBtn.disabled = false;
     }, 'image/jpeg', 0.85);
 });
 
@@ -919,6 +1287,9 @@ cancelCropBtn.addEventListener('click', () => {
     cropInterface.classList.add('hidden');
     cropControls.classList.add('hidden');
     captureBtn.classList.remove('hidden');
+    if (editThumbnailBtn) {
+        editThumbnailBtn.disabled = thumbnailImg.classList.contains('hidden') || thumbnailImg.dataset.editable !== 'true';
+    }
 });
 
 

@@ -50,9 +50,15 @@
         <main class="main-content">
             <header class="top-header">
                 <h1 class="page-title">Dashboard</h1>
-                <button id="add-movie-toggle" class="btn btn-primary">
-                    <span class="icon">+</span> Add New Movie
-                </button>
+                <div class="header-button-group">
+                    <button id="add-movie-toggle" class="btn btn-primary">
+                        <span class="icon">+</span> Add New Movie
+                    </button>
+                    <button id="open-batch-upload" class="btn btn-secondary">
+                        📦 Batch Upload
+                    </button>
+                    <span class="version-tag">v1.0.0</span>
+                </div>
             </header>
 
             <!-- Upload / Edit Form Panel -->
@@ -73,7 +79,7 @@
                         <input type="hidden" id="movie-id">
 
                         <!-- Video Upload Section -->
-                                 <div class="form-section upload-section">
+                        <div class="form-section upload-section">
                                      <h3>Media</h3>
                                      <div class="upload-grid">
                                 <div class="file-drop-zone" id="video-drop-zone">
@@ -103,22 +109,15 @@
                                                 <div class="crop-handle ne"></div>
                                                 <div class="crop-handle sw"></div>
                                                 <div class="crop-handle se"></div>
-                                     </div>
-                                     <!-- Batch Import -->
-                                     <div class="form-group" style="margin-top:20px;">
-                                         <label>Batch Import Videos</label>
-                                         <input type="file" id="batch-video-files" accept="video/mp4" multiple>
-                                         <div id="batch-progress" style="margin-top:10px; width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden;">
-                                             <div id="batch-progress-bar" style="height:100%; width:0%; background:var(--color-accent); transition:width 0.2s;"></div>
-                                         </div>
-                                         <ul id="batch-queue" style="margin-top:10px;font-size:0.85rem;color:var(--text-muted);list-style:none;padding-left:0;"></ul>
-                                         <button type="button" id="start-batch-btn" class="btn btn-primary" style="margin-top:10px;">Start Batch Processing</button>
-                                     </div>
-                                 </div>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div class="thumb-controls">
                                         <button type="button" id="capture-btn" class="btn btn-secondary" disabled>
                                             📸 Capture from Video
+                                        </button>
+                                        <button type="button" id="edit-thumbnail-btn" class="btn btn-secondary" disabled>
+                                            ✂️ Edit Current Thumbnail
                                         </button>
                                         <div id="crop-controls" class="crop-controls hidden">
                                             <button type="button" id="apply-crop-btn" class="btn btn-primary btn-sm">
@@ -339,6 +338,63 @@
          We will do that in app.js. -->
     <script src="config.js"
         onerror="console.error('Failed to load config.js'); alert('Failed to load config.js. Check console.');"></script>
+    <!-- Batch Upload Modal -->
+    <section id="batch-upload-modal" class="panel-overlay hidden">
+        <div class="panel-content batch-panel">
+            <div class="panel-header">
+                <h2>Batch Upload</h2>
+                <div class="header-actions">
+                    <button id="close-batch-upload" class="btn-icon">&times;</button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="batch-upload-controls">
+                    <label class="batch-file-input">
+                        <span class="label">Select MP4 files</span>
+                        <input type="file" id="batch-video-files" accept="video/mp4" multiple>
+                    </label>
+                    <div class="batch-summary" id="batch-summary">
+                        <span data-summary="queued">Queued: 0</span>
+                        <span data-summary="processing">Processing: 0</span>
+                        <span data-summary="completed">Completed: 0</span>
+                        <span data-summary="failed">Failed: 0</span>
+                    </div>
+                    <div class="batch-progress" id="batch-progress">
+                        <div id="batch-progress-bar"></div>
+                    </div>
+                </div>
+                <ul id="batch-queue" class="batch-list"></ul>
+            </div>
+            <div class="panel-footer">
+                <div class="actions">
+                    <button id="start-batch-btn" class="btn btn-primary">Start Batch Upload</button>
+                    <button id="batch-clear-btn" class="btn btn-ghost">Clear List</button>
+                    <button id="batch-close-footer" class="btn btn-secondary">Close</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Batch Complete Modal -->
+    <section id="batch-complete-modal" class="panel-overlay hidden">
+        <div class="panel-content" style="max-width: 420px;">
+            <div class="panel-header">
+                <h2>Batch Upload Complete</h2>
+                <div class="header-actions">
+                    <button id="batch-complete-close" class="btn-icon">&times;</button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <p id="batch-complete-message"></p>
+            </div>
+            <div class="panel-footer">
+                <button id="batch-complete-ok" class="btn btn-primary">OK</button>
+            </div>
+        </div>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+
     <script type="module" src="app.js"></script>
 </body>
 

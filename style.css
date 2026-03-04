@@ -153,6 +153,17 @@ body {
     margin-bottom: 30px;
 }
 
+.header-button-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.version-tag {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
 .page-title {
     font-size: 2rem;
     font-weight: 700;
@@ -268,6 +279,159 @@ body {
     margin-bottom: 25px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     padding-bottom: 15px;
+}
+
+.batch-panel .panel-body {
+    padding: 0 0 20px;
+}
+
+.batch-upload-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.batch-file-input {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.batch-file-input input[type="file"] {
+    font-size: 0.9rem;
+}
+
+.batch-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.batch-progress {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.batch-progress #batch-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--color-accent);
+    transition: width 0.3s ease;
+}
+
+.batch-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.batch-item-empty {
+    padding: 28px;
+    text-align: center;
+    color: var(--text-muted);
+    border-radius: 12px;
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.batch-item {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.batch-item-thumb {
+    width: 64px;
+    height: 40px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.batch-item-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.batch-item-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.batch-item-details .title {
+    font-weight: 600;
+    color: white;
+}
+
+.batch-item-details .meta {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.batch-item-status {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+}
+
+.status-badge {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.status-badge.queued {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-muted);
+}
+
+.status-badge.processing {
+    background: rgba(52, 152, 219, 0.15);
+    color: #64c1ff;
+}
+
+.status-badge.completed {
+    background: rgba(46, 204, 113, 0.18);
+    color: #7ae2a4;
+}
+
+.status-badge.failed {
+    background: rgba(231, 76, 60, 0.18);
+    color: #ff9b94;
+}
+
+.batch-item-error {
+    font-size: 0.75rem;
+    color: #ff9b94;
 }
 
 /* Forms */
@@ -420,6 +584,39 @@ body {
     font-size: 0.9rem;
     color: var(--text-secondary);
     margin: 0;
+}
+
+.toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: rgba(0, 0, 0, 0.85);
+    color: white;
+    padding: 12px 18px;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    transform: translateY(10px);
+    max-width: 320px;
+    font-size: 0.9rem;
+    z-index: 2000;
+}
+
+.toast.show {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+#batch-complete-modal .panel-content {
+    text-align: center;
+}
+
+#batch-complete-modal .panel-body p {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
 }
 
 .poster-sync-status {
