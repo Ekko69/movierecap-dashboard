@@ -385,7 +385,7 @@ async function processBatchItem(item) {
     item.status = 'transcribing';
     updateBatchUI();
     const transcriptId = await transcribeAudio(url);
-    const transcript = await pollTranscription(transcriptId, () => {});
+    const transcript = await pollTranscription(transcriptId, () => { });
     item.transcriptText = transcript.text;
     item.status = 'transcribed';
     updateBatchUI();
@@ -941,8 +941,17 @@ function openForm(movie = null) {
         document.getElementById('description').value = movie.description;
 
         // Check the categories
+        let catsToCheck = [];
         if (movie.categories && Array.isArray(movie.categories)) {
-            movie.categories.forEach(cat => {
+            catsToCheck = movie.categories;
+        } else if (movie.category && typeof movie.category === 'string') {
+            catsToCheck = [movie.category];
+        } else if (movie.category && Array.isArray(movie.category)) {
+            catsToCheck = movie.category;
+        }
+
+        if (catsToCheck.length > 0) {
+            catsToCheck.forEach(cat => {
                 const checkbox = document.querySelector(`input[name="category"][value="${cat}"]`);
                 if (checkbox) checkbox.checked = true;
             });
@@ -1527,9 +1536,12 @@ async function handleFormSubmit(e) {
             year: year || new Date().getFullYear(),
             duration,
             categories: selectedCategories.length ? selectedCategories : ['New'],
-            description: description || "No description",
-            updatedAt: Date.now()
+            description: description || "No description"
         };
+
+        if (!editingMovieId) {
+            movieData.updatedAt = Date.now();
+        }
 
         if (videoUrl) movieData.videoURL = videoUrl;
         if (videoUrl) movieData.videoURL = videoUrl;
