@@ -67,6 +67,11 @@
                     <div class="panel-header">
                         <h2 id="form-title">Add New Movie</h2>
                         <div class="header-actions">
+                            <label class="ai-thumb-toggle-label" title="Automatically generate an AI thumbnail after syncing">
+                                <input type="checkbox" id="auto-ai-thumbnail-toggle">
+                                <span class="ai-thumb-toggle-track"></span>
+                                <span class="ai-thumb-toggle-text">✨ Auto AI Thumbnail</span>
+                            </label>
                             <button id="sync-data-btn" class="btn btn-warning btn-sm" type="button"
                                 style="margin-right: 10px;">
                                 ⚡ Sync Movie Data
@@ -150,6 +155,11 @@
                                                 <div class="crop-handle se"></div>
                                             </div>
                                         </div>
+                                        <!-- AI Generation Loading Overlay -->
+                                        <div id="ai-thumb-loading" class="ai-thumb-loading hidden">
+                                            <div class="ai-thumb-spinner"></div>
+                                            <span>Generating AI Thumbnail...</span>
+                                        </div>
                                     </div>
                                     <div class="thumb-controls">
                                         <button type="button" id="capture-btn" class="btn btn-secondary" disabled>
@@ -157,6 +167,9 @@
                                         </button>
                                         <button type="button" id="edit-thumbnail-btn" class="btn btn-secondary" disabled>
                                             ✂️ Edit Current Thumbnail
+                                        </button>
+                                        <button type="button" id="generate-ai-thumbnail-btn" class="btn btn-ai" disabled>
+                                            ✨ AI Thumbnail
                                         </button>
                                         <div id="crop-controls" class="crop-controls hidden">
                                             <button type="button" id="apply-crop-btn" class="btn btn-primary btn-sm">

@@ -545,6 +545,27 @@ let currentVideoFile = null;
 let currentThumbnailBlob = null;
 let currentFeaturedThumbnailFile = null;
 let currentSubtitleFile = null;
+let currentYoutubeThumbnailUrl = null;
+let aiThumbnailGenerating = false;
+let aiThumbnailTriggered = false;
+
+// ── Auto AI Thumbnail setting ──────────────────────────────────────────────
+const AUTO_AI_THUMB_KEY = 'autoAiThumbnail';
+
+function loadAutoAiThumbnailSetting() {
+    const toggle = document.getElementById('auto-ai-thumbnail-toggle');
+    if (!toggle) return;
+    toggle.checked = localStorage.getItem(AUTO_AI_THUMB_KEY) === 'true';
+    toggle.addEventListener('change', () => {
+        localStorage.setItem(AUTO_AI_THUMB_KEY, toggle.checked);
+    });
+}
+
+function isAutoAiThumbnailEnabled() {
+    return localStorage.getItem(AUTO_AI_THUMB_KEY) === 'true';
+}
+
+loadAutoAiThumbnailSetting();
 
 let editingMovieId = null;
 
@@ -1000,7 +1021,12 @@ function closeForm() {
 function resetMediaInputs() {
     currentVideoFile = null;
     currentThumbnailBlob = null;
+    currentYoutubeThumbnailUrl = null;
     currentSubtitleFile = null;
+    aiThumbnailGenerating = false;
+    aiThumbnailTriggered = false;
+    const aiBtn = document.getElementById('generate-ai-thumbnail-btn');
+    if (aiBtn) aiBtn.disabled = true;
     videoInput.value = '';
     subtitleInput.value = '';
     subtitleFileName.textContent = 'No file selected';
@@ -1450,6 +1476,13 @@ async function syncMovieData() {
 
         uploadProgressBar.style.width = '100%';
         document.querySelector('.progress-label').textContent = "Sync Complete!";
+
+        // Auto AI Thumbnail generation (skip if already triggered during download)
+        if (isAutoAiThumbnailEnabled() && currentYoutubeThumbnailUrl && !aiThumbnailTriggered) {
+            document.querySelector('.progress-label').textContent = "Generating AI Thumbnail...";
+            await generateAIThumbnail();
+        }
+
         setTimeout(() => {
             progressContainer.classList.add('hidden');
             alert("Sync completed successfully! Please review the details.");
@@ -1869,6 +1902,7 @@ function filterMovies(query) {
 
 async function setYouTubeThumbnail(url) {
     try {
+        currentYoutubeThumbnailUrl = url;
         const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`);
         if (!res.ok) return;
         const blob = await res.blob();
@@ -1878,7 +1912,104 @@ async function setYouTubeThumbnail(url) {
         thumbnailImg.classList.remove('hidden');
         thumbPlaceholder.classList.add('hidden');
         if (editThumbnailBtn) editThumbnailBtn.disabled = false;
+        const aiBtn = document.getElementById('generate-ai-thumbnail-btn');
+        if (aiBtn) aiBtn.disabled = false;
     } catch (_) {}
+}
+
+async function generateAIThumbnail() {
+    if (!currentYoutubeThumbnailUrl || aiThumbnailGenerating) return;
+
+    aiThumbnailGenerating = true;
+    aiThumbnailTriggered = true;
+    const btn = document.getElementById('generate-ai-thumbnail-btn');
+    const loadingOverlay = document.getElementById('ai-thumb-loading');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Generating...';
+    loadingOverlay.classList.remove('hidden');
+
+    try {
+        const res = await fetch('/api/generate-thumbnail', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ thumbnailUrl: currentYoutubeThumbnailUrl })
+        });
+
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            const msg = typeof body.error === 'string' ? body.error
+                : body.error ? JSON.stringify(body.error)
+                : `Server error ${res.status}`;
+            throw new Error(msg);
+        }
+
+        const { imageUrl, logoUrl } = await res.json();
+
+        // Fetch generated image through proxy to avoid CORS issues with canvas
+        const imgRes = await fetch(`/api/proxy-image?url=${encodeURIComponent(imageUrl)}`);
+        if (!imgRes.ok) throw new Error('Failed to fetch generated image');
+        const generatedBlob = await imgRes.blob();
+        const generatedObjectUrl = URL.createObjectURL(generatedBlob);
+
+        // Composite logo watermark onto generated image using Canvas
+        const composited = await compositeWatermark(generatedObjectUrl);
+        URL.revokeObjectURL(generatedObjectUrl);
+
+        currentThumbnailBlob = composited;
+        thumbnailImg.src = URL.createObjectURL(composited);
+        thumbnailImg.dataset.editable = 'true';
+        thumbnailImg.classList.remove('hidden');
+        thumbPlaceholder.classList.add('hidden');
+        if (editThumbnailBtn) editThumbnailBtn.disabled = false;
+    } catch (err) {
+        const msg = err?.message || String(err);
+        console.error('[AI thumbnail]', msg);
+        alert('AI thumbnail generation failed: ' + msg);
+    } finally {
+        aiThumbnailGenerating = false;
+        btn.disabled = false;
+        btn.textContent = '✨ AI Thumbnail';
+        loadingOverlay.classList.add('hidden');
+    }
+}
+
+function compositeWatermark(generatedImageUrl) {
+    return new Promise((resolve, reject) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1920;
+        canvas.height = 1080;
+        const ctx = canvas.getContext('2d');
+
+        const mainImg = new Image();
+        mainImg.crossOrigin = 'anonymous';
+        mainImg.onload = () => {
+            ctx.drawImage(mainImg, 0, 0, 1920, 1080);
+
+            const logoImg = new Image();
+            logoImg.onload = () => {
+                const logoSize = Math.round(1920 * 0.075); // ~144px
+                const margin = Math.round(1920 * 0.022);   // ~42px
+                ctx.globalAlpha = 0.88;
+                ctx.drawImage(logoImg, 1920 - logoSize - margin, 1080 - logoSize - margin, logoSize, logoSize);
+                ctx.globalAlpha = 1;
+                canvas.toBlob((blob) => {
+                    if (blob) resolve(blob);
+                    else reject(new Error('Canvas export failed'));
+                }, 'image/jpeg', 0.92);
+            };
+            logoImg.onerror = () => {
+                // If logo fails to load, still resolve with the generated image as-is
+                canvas.toBlob((blob) => {
+                    if (blob) resolve(blob);
+                    else reject(new Error('Canvas export failed'));
+                }, 'image/jpeg', 0.92);
+            };
+            logoImg.src = 'assets/img/logo-icon.png';
+        };
+        mainImg.onerror = reject;
+        mainImg.src = generatedImageUrl;
+    });
 }
 
 function extractYouTubeVideoId(url) {
@@ -1966,6 +2097,11 @@ async function downloadYouTubeVideo(videoId, quality = '360p') {
 
         statusLabel.textContent = 'Downloading...';
 
+        // Fire AI thumbnail generation in parallel with the download
+        if (isAutoAiThumbnailEnabled() && currentYoutubeThumbnailUrl) {
+            generateAIThumbnail();
+        }
+
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -2043,3 +2179,5 @@ document.getElementById('download-youtube-btn')?.addEventListener('click', () =>
     const quality = document.getElementById('youtube-quality')?.value || '360p';
     downloadYouTubeVideo(videoId, quality);
 });
+
+document.getElementById('generate-ai-thumbnail-btn')?.addEventListener('click', generateAIThumbnail);
