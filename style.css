@@ -1227,3 +1227,148 @@ textarea:focus {
     background-color: var(--bg-card);
     color: var(--text-primary);
 }
+
+/* ── YouTube downloader ─────────────────────────────── */
+.source-toggle {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.source-tab {
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: 1px solid var(--color-accent);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: var(--transition);
+}
+
+.source-tab.active,
+.source-tab:hover {
+    background: var(--color-accent);
+    color: #fff;
+}
+
+#youtube-input-section {
+    margin-bottom: 12px;
+}
+
+.youtube-url-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.youtube-url-input {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.05);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.youtube-url-input:focus {
+    outline: none;
+    border-color: var(--color-accent);
+}
+
+.youtube-url-input::placeholder {
+    color: var(--text-muted);
+}
+
+#youtube-preview {
+    background: rgba(255,255,255,0.04);
+    border-radius: 10px;
+    padding: 10px;
+    border: 1px solid rgba(255,255,255,0.08);
+}
+
+.youtube-preview-inner {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+#youtube-thumb-preview {
+    width: 120px;
+    height: 68px;
+    object-fit: cover;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+.youtube-video-meta {
+    flex: 1;
+    min-width: 0;
+}
+
+.youtube-meta-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+}
+
+.youtube-meta-duration {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.youtube-download-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.youtube-quality-select {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.07);
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    cursor: pointer;
+    appearance: none;
+    min-width: 72px;
+}
+
+.youtube-quality-select:focus {
+    outline: none;
+    border-color: var(--color-accent);
+}
+
+.youtube-quality-select option {
+    background: var(--bg-card);
+    color: var(--text-primary);
+}
+
+.youtube-progress-bar-wrap {
+    height: 6px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 3px;
+    margin: 8px 0 4px;
+    overflow: hidden;
+}
+
+.youtube-progress-bar {
+    height: 100%;
+    background: var(--color-accent);
+    border-radius: 3px;
+    transition: width 0.2s ease;
+}
+
+.youtube-status-label {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}

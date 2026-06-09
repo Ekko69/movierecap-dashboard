@@ -81,6 +81,45 @@
                         <!-- Video Upload Section -->
                         <div class="form-section upload-section">
                                      <h3>Media</h3>
+
+                                     <!-- Source toggle -->
+                                     <div class="source-toggle">
+                                         <button type="button" id="source-file-btn" class="source-tab active">Upload File</button>
+                                         <button type="button" id="source-youtube-btn" class="source-tab">YouTube URL</button>
+                                     </div>
+
+                                     <!-- YouTube input section -->
+                                     <div id="youtube-input-section" class="hidden">
+                                         <div class="youtube-url-group">
+                                             <input type="text" id="youtube-url" placeholder="https://www.youtube.com/watch?v=..." class="youtube-url-input">
+                                             <button type="button" id="fetch-youtube-btn" class="btn btn-secondary btn-sm">Fetch Info</button>
+                                         </div>
+                                         <div id="youtube-preview" class="hidden">
+                                             <div class="youtube-preview-inner">
+                                                 <img id="youtube-thumb-preview" src="" alt="YouTube Thumbnail">
+                                                 <div class="youtube-video-meta">
+                                                     <p id="youtube-title-preview" class="youtube-meta-title"></p>
+                                                     <p id="youtube-duration-preview" class="youtube-meta-duration"></p>
+                                                 </div>
+                                             </div>
+                                             <div class="youtube-download-row">
+                                                 <select id="youtube-quality" class="youtube-quality-select">
+                                                     <option value="360p">360p</option>
+                                                     <option value="480p">480p</option>
+                                                     <option value="720p">720p</option>
+                                                     <option value="1080p">1080p</option>
+                                                 </select>
+                                                 <button type="button" id="download-youtube-btn" class="btn btn-primary btn-sm">⬇️ Download Video</button>
+                                             </div>
+                                             <div id="youtube-download-progress" class="hidden">
+                                                 <div class="youtube-progress-bar-wrap">
+                                                     <div id="youtube-progress-bar" class="youtube-progress-bar" style="width:0%"></div>
+                                                 </div>
+                                                 <span id="youtube-status-label" class="youtube-status-label">Downloading...</span>
+                                             </div>
+                                         </div>
+                                     </div>
+
                                      <div class="upload-grid">
                                 <div class="file-drop-zone" id="video-drop-zone">
                                     <input type="file" id="video-file" accept="video/mp4" class="hidden-input">

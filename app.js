@@ -1032,6 +1032,20 @@ function resetMediaInputs() {
 
     captureBtn.disabled = true;
 
+    // Reset YouTube section
+    const youtubeUrl = document.getElementById('youtube-url');
+    const youtubePreview = document.getElementById('youtube-preview');
+    const youtubeProgress = document.getElementById('youtube-download-progress');
+    const youtubeSection = document.getElementById('youtube-input-section');
+    const dropZoneEl = document.getElementById('video-drop-zone');
+    if (youtubeUrl) youtubeUrl.value = '';
+    if (youtubePreview) youtubePreview.classList.add('hidden');
+    if (youtubeProgress) youtubeProgress.classList.add('hidden');
+    // Reset to "Upload File" mode
+    document.getElementById('source-file-btn')?.classList.add('active');
+    document.getElementById('source-youtube-btn')?.classList.remove('active');
+    if (youtubeSection) youtubeSection.classList.add('hidden');
+    if (dropZoneEl) dropZoneEl.classList.remove('hidden');
 
     progressContainer.classList.add('hidden');
     uploadProgressBar.style.width = '0%';
@@ -1850,3 +1864,182 @@ function filterMovies(query) {
         }
     });
 }
+
+// ── YouTube downloader ──────────────────────────────────────────────
+
+async function setYouTubeThumbnail(url) {
+    try {
+        const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`);
+        if (!res.ok) return;
+        const blob = await res.blob();
+        currentThumbnailBlob = blob;
+        thumbnailImg.src = URL.createObjectURL(blob);
+        thumbnailImg.dataset.editable = 'true';
+        thumbnailImg.classList.remove('hidden');
+        thumbPlaceholder.classList.add('hidden');
+        if (editThumbnailBtn) editThumbnailBtn.disabled = false;
+    } catch (_) {}
+}
+
+function extractYouTubeVideoId(url) {
+    const patterns = [
+        /[?&]v=([a-zA-Z0-9_-]{11})/,
+        /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+        /\/shorts\/([a-zA-Z0-9_-]{11})/,
+        /\/embed\/([a-zA-Z0-9_-]{11})/
+    ];
+    for (const re of patterns) {
+        const m = url.match(re);
+        if (m) return m[1];
+    }
+    return null;
+}
+
+async function fetchYouTubeInfo(videoId) {
+    const fetchBtn = document.getElementById('fetch-youtube-btn');
+    fetchBtn.disabled = true;
+    fetchBtn.textContent = 'Fetching...';
+
+    try {
+        const res = await fetch(`/api/youtube-info?videoId=${encodeURIComponent(videoId)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to fetch video info');
+
+        // Auto-populate metadata fields
+        if (data.title) document.getElementById('title').value = data.title;
+        if (data.publishYear) document.getElementById('year').value = data.publishYear;
+        if (data.description) {
+            const existing = document.getElementById('description').value;
+            if (!existing) document.getElementById('description').value = data.description.slice(0, 500);
+        }
+
+        // Show YouTube preview card
+        const preview = document.getElementById('youtube-preview');
+        const thumbEl = document.getElementById('youtube-thumb-preview');
+        const titleEl = document.getElementById('youtube-title-preview');
+        const durEl = document.getElementById('youtube-duration-preview');
+
+        if (data.thumbnail) thumbEl.src = data.thumbnail;
+        titleEl.textContent = data.title || '';
+        if (data.duration) {
+            const m = Math.floor(data.duration / 60);
+            const s = data.duration % 60;
+            durEl.textContent = `${m}m ${s}s`;
+        }
+        preview.classList.remove('hidden');
+
+        // Pre-fetch the YouTube thumbnail via server proxy (avoids CORS)
+        if (data.thumbnail) {
+            await setYouTubeThumbnail(data.thumbnail);
+        }
+    } catch (err) {
+        alert('Could not fetch YouTube info: ' + err.message);
+    } finally {
+        fetchBtn.disabled = false;
+        fetchBtn.textContent = 'Fetch Info';
+    }
+}
+
+async function downloadYouTubeVideo(videoId, quality = '360p') {
+    const dlBtn = document.getElementById('download-youtube-btn');
+    const progressWrap = document.getElementById('youtube-download-progress');
+    const progressBar = document.getElementById('youtube-progress-bar');
+    const statusLabel = document.getElementById('youtube-status-label');
+
+    dlBtn.disabled = true;
+    progressWrap.classList.remove('hidden');
+    statusLabel.textContent = 'Connecting...';
+    progressBar.style.width = '0%';
+
+    try {
+        const res = await fetch(`/api/youtube-download?videoId=${encodeURIComponent(videoId)}&quality=${encodeURIComponent(quality)}`);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: res.statusText }));
+            throw new Error(err.error || 'Download failed');
+        }
+
+        const contentLength = res.headers.get('Content-Length');
+        const total = contentLength ? parseInt(contentLength, 10) : 0;
+        const reader = res.body.getReader();
+        const chunks = [];
+        let received = 0;
+
+        statusLabel.textContent = 'Downloading...';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            received += value.length;
+            if (total > 0) {
+                progressBar.style.width = Math.min(100, Math.round((received / total) * 100)) + '%';
+            } else {
+                // Indeterminate — animate width based on received MB
+                const fakeProgress = Math.min(90, Math.round((received / (1024 * 1024 * 100)) * 100));
+                progressBar.style.width = fakeProgress + '%';
+            }
+            statusLabel.textContent = `Downloading… ${(received / (1024 * 1024)).toFixed(1)} MB`;
+        }
+
+        progressBar.style.width = '100%';
+        statusLabel.textContent = 'Processing video...';
+
+        const blob = new Blob(chunks, { type: 'video/mp4' });
+        const title = document.getElementById('title').value || videoId;
+        const file = new File([blob], `${title}.mp4`, { type: 'video/mp4' });
+
+        handleVideoSelect(file);
+        statusLabel.textContent = 'Done! Starting sync...';
+
+        // Reveal the video drop zone so the preview is visible
+        document.getElementById('video-drop-zone').classList.remove('hidden');
+
+        // Auto-set thumbnail from YouTube if not already loaded
+        if (!currentThumbnailBlob) {
+            const thumbUrl = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+            await setYouTubeThumbnail(thumbUrl);
+        }
+
+        dlBtn.disabled = false;
+
+        // Auto-run Sync Movie Data
+        await new Promise(r => setTimeout(r, 500));
+        syncMovieData();
+    } catch (err) {
+        statusLabel.textContent = 'Error: ' + err.message;
+        dlBtn.disabled = false;
+    }
+}
+
+// Source toggle
+document.getElementById('source-file-btn')?.addEventListener('click', () => {
+    document.getElementById('source-file-btn').classList.add('active');
+    document.getElementById('source-youtube-btn').classList.remove('active');
+    document.getElementById('youtube-input-section').classList.add('hidden');
+    document.getElementById('video-drop-zone').classList.remove('hidden');
+});
+
+document.getElementById('source-youtube-btn')?.addEventListener('click', () => {
+    document.getElementById('source-youtube-btn').classList.add('active');
+    document.getElementById('source-file-btn').classList.remove('active');
+    document.getElementById('youtube-input-section').classList.remove('hidden');
+    document.getElementById('video-drop-zone').classList.add('hidden');
+});
+
+document.getElementById('fetch-youtube-btn')?.addEventListener('click', () => {
+    const url = document.getElementById('youtube-url').value.trim();
+    const videoId = extractYouTubeVideoId(url);
+    if (!videoId) {
+        alert('Please enter a valid YouTube URL.');
+        return;
+    }
+    fetchYouTubeInfo(videoId);
+});
+
+document.getElementById('download-youtube-btn')?.addEventListener('click', () => {
+    const url = document.getElementById('youtube-url').value.trim();
+    const videoId = extractYouTubeVideoId(url);
+    if (!videoId) return;
+    const quality = document.getElementById('youtube-quality')?.value || '360p';
+    downloadYouTubeVideo(videoId, quality);
+});

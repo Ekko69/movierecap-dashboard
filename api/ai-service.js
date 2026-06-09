@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     }
 
     try {
-        const model = 'gpt-3.5-turbo';
+        const model = 'gpt-4o-mini';
         console.info('AI Service Request', {
             requestId,
             startedAt,

@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "dependencies": {
+    "youtubei.js": "^13.0.0"
+  }
+}

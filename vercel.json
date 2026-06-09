@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/youtube-download.js": {
+      "maxDuration": 60
+    }
+  }
+}
