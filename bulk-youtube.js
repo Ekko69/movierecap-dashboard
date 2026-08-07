@@ -44,6 +44,8 @@ export function initBulkYoutube(injected) {
         renderQueue();
     });
 
+    startBtn?.addEventListener('click', runBulkImport);
+
     renderQueue();
 }
 
@@ -240,4 +242,126 @@ function renderQueue() {
     if (clearBtn) clearBtn.disabled = processing || !queue.length;
     if (fileInput) fileInput.disabled = processing;
     if (qualitySelect) qualitySelect.disabled = processing;
+}
+
+// Only one yt-dlp download runs at a time — two concurrent downloads invite
+// throttling from YouTube. Item B downloads while item A transcribes.
+let downloadChain = Promise.resolve();
+
+function withDownloadSlot(task) {
+    const result = downloadChain.then(task, task);
+    downloadChain = result.catch(() => { });
+    return result;
+}
+
+async function fetchVideoInfo(videoId) {
+    const res = await fetch(`/api/youtube-info?videoId=${encodeURIComponent(videoId)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Failed to fetch video info');
+    return data;
+}
+
+async function fetchThumbnailBlob(url) {
+    try {
+        const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`);
+        if (!res.ok) return null;
+        return await res.blob();
+    } catch (error) {
+        return null;
+    }
+}
+
+async function downloadVideoFile(item, quality) {
+    const res = await fetch(
+        `/api/youtube-download?videoId=${encodeURIComponent(item.videoId)}` +
+        `&quality=${encodeURIComponent(quality)}`
+    );
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || 'Download failed');
+    }
+
+    const reader = res.body.getReader();
+    const chunks = [];
+    let received = 0;
+    let lastReportedMb = 0;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        const mb = received / (1024 * 1024);
+        // Re-render at most once per megabyte — the queue is rebuilt on every call.
+        if (mb - lastReportedMb >= 1) {
+            lastReportedMb = mb;
+            item.downloadedMb = mb.toFixed(1);
+            renderQueue();
+        }
+    }
+
+    if (!received) throw new Error('Download returned no data');
+
+    const blob = new Blob(chunks, { type: 'video/mp4' });
+    const name = (item.title || item.videoId).replace(/[^a-zA-Z0-9_\-. ]/g, '').trim();
+    return new File([blob], `${name || item.videoId}.mp4`, { type: 'video/mp4' });
+}
+
+async function processBulkItem(item) {
+    const quality = qualitySelect?.value || '360p';
+
+    const file = await withDownloadSlot(async () => {
+        item.status = 'fetching-info';
+        renderQueue();
+        const info = await fetchVideoInfo(item.videoId);
+        item.title = info.title || item.videoId;
+        item.duration = info.duration ? deps.formatDuration(info.duration) : null;
+        item.youtubeThumbnail = info.thumbnail || null;
+
+        item.status = 'downloading';
+        renderQueue();
+        return downloadVideoFile(item, quality);
+    });
+
+    item.movieId = crypto.randomUUID();
+    item.status = 'uploading';
+    renderQueue();
+    item.videoUrl = await deps.uploadItemVideo(item.movieId, file);
+
+    item.status = 'uploading-thumbnail';
+    renderQueue();
+    if (item.youtubeThumbnail) {
+        const blob = await fetchThumbnailBlob(item.youtubeThumbnail);
+        if (blob) {
+            item.thumbnailURL = await deps.uploadThumbnailBlob(item.movieId, blob, 'yt-thumb.jpg');
+        }
+    }
+    renderQueue();
+
+    await deps.enrichAndSave(item, renderQueue);
+}
+
+async function runBulkImport() {
+    if (processing) return;
+    const runnable = queue.filter(item => item.status === 'queued');
+    if (!runnable.length) return;
+
+    processing = true;
+    renderQueue();
+
+    await deps.runQueue(runnable, processBulkItem, 2, renderQueue);
+
+    processing = false;
+    renderQueue();
+
+    const completed = queue.filter(i => i.status === 'completed').length;
+    const failed = queue.filter(i => i.status === 'failed').length;
+    const duplicates = queue.filter(i => i.status === 'completed' && i.wasDuplicate).length;
+
+    let message = `Bulk import complete: ${completed} imported, ${failed} failed.`;
+    if (duplicates) {
+        message += ` (${duplicates} possible duplicate${duplicates === 1 ? '' : 's'})`;
+    }
+    deps.showToast(message);
+    deps.showBatchCompleteModal(completed, failed);
 }
