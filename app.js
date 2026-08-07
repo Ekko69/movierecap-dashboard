@@ -16,7 +16,7 @@ import {
     getDownloadURL,
     deleteObject
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
-import { initBulkYoutube, isBulkProcessing } from './bulk-youtube.js';
+import { initBulkYoutube, isBulkProcessing, resetBulkYoutube } from './bulk-youtube.js';
 
 // Firebase Config
 // Firebase Config
@@ -1065,6 +1065,10 @@ function openForm(movie = null) {
 }
 
 function closeForm() {
+    if (isBulkProcessing()) {
+        alert('Bulk import is still running. Please wait for it to finish.');
+        return;
+    }
     movieFormPanel.classList.add('hidden');
     videoPreview.pause();
 }
@@ -1114,16 +1118,13 @@ function resetMediaInputs() {
     const youtubeUrl = document.getElementById('youtube-url');
     const youtubePreview = document.getElementById('youtube-preview');
     const youtubeProgress = document.getElementById('youtube-download-progress');
-    const youtubeSection = document.getElementById('youtube-input-section');
-    const dropZoneEl = document.getElementById('video-drop-zone');
     if (youtubeUrl) youtubeUrl.value = '';
     if (youtubePreview) youtubePreview.classList.add('hidden');
     if (youtubeProgress) youtubeProgress.classList.add('hidden');
-    // Reset to "Upload File" mode
-    document.getElementById('source-file-btn')?.classList.add('active');
-    document.getElementById('source-youtube-btn')?.classList.remove('active');
-    if (youtubeSection) youtubeSection.classList.add('hidden');
-    if (dropZoneEl) dropZoneEl.classList.remove('hidden');
+
+    // Reset bulk section and return to "Upload File" mode
+    resetBulkYoutube();
+    setSourceMode('source-file-btn');
 
     progressContainer.classList.add('hidden');
     uploadProgressBar.style.width = '0%';
@@ -2238,6 +2239,7 @@ const SOURCE_TABS = [
 ];
 
 function setSourceMode(activeBtnId) {
+    if (isBulkProcessing()) return;
     SOURCE_TABS.forEach(({ btnId, panelId }) => {
         const isActive = btnId === activeBtnId;
         document.getElementById(btnId)?.classList.toggle('active', isActive);

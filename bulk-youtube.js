@@ -46,6 +46,18 @@ export function initBulkYoutube(injected) {
 
     startBtn?.addEventListener('click', runBulkImport);
 
+    retryBtn?.addEventListener('click', () => {
+        if (processing) return;
+        queue.forEach((item) => {
+            if (item.status !== 'failed') return;
+            item.status = 'queued';
+            item.error = null;
+            item.downloadedMb = null;
+        });
+        renderQueue();
+        runBulkImport();
+    });
+
     renderQueue();
 }
 
@@ -364,4 +376,12 @@ async function runBulkImport() {
     }
     deps.showToast(message);
     deps.showBatchCompleteModal(completed, failed);
+}
+
+export function resetBulkYoutube() {
+    if (processing) return;
+    queue = [];
+    if (fileInput) fileInput.value = '';
+    setFoundText('No file selected.');
+    renderQueue();
 }
