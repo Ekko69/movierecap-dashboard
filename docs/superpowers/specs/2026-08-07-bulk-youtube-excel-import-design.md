@@ -53,7 +53,6 @@ export function initBulkYoutube(deps);
 | `enrichAndSave` | `(item) => Promise<void>` | extracted |
 | `runQueue` | `(items, worker, concurrency, onUpdate) => Promise<void>` | extracted |
 | `formatDuration` | `(seconds) => string` | existing, app.js:215 |
-| `isDuplicate` | `(title, year) => boolean` | new thin wrapper over `buildDuplicateKey` + `existingMovieKeys` |
 | `showToast` | `(message) => void` | existing, app.js:222 |
 | `showBatchCompleteModal` | `(completed, failed) => void` | existing, app.js:236 |
 
@@ -157,7 +156,14 @@ it can be found and removed afterward, and the completion toast appends
 `(N possible duplicates)` when any were seen.
 
 The check runs *after* metadata resolves — YouTube titles are too clickbait-laden to match
-reliably before AI/OMDb normalization.
+reliably before AI/OMDb normalization — and *before* the `set()` write, inside `enrichAndSave`,
+so the row is never compared against the record it is about to create. `enrichAndSave` sets
+`item.wasDuplicate`; the bulk renderer reads it. That keeps the check in `app.js`, which owns
+`existingMovieKeys`, so `bulk-youtube.js` needs no duplicate-related dependency.
+
+**Prerequisite:** `existingMovieKeys` (app.js:70) is currently declared but never populated, so
+the existing duplicate confirm at app.js:1529 never fires. The movies `onValue` listener
+(app.js:1702) must rebuild the Set on every snapshot before any of this works.
 
 ### Error messages surfaced to the user
 
