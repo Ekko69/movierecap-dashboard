@@ -525,6 +525,61 @@ body {
     color: #ff9b94;
 }
 
+/* Bulk YouTube import */
+#bulk-youtube-section {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.bulk-hint {
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.bulk-controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.bulk-found-count {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.batch-progress #bulk-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--color-accent);
+    transition: width 0.3s ease;
+}
+
+.bulk-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.batch-item-tag {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: rgba(241, 196, 15, 0.18);
+    color: #ffd86b;
+}
+
 /* Forms */
 .form-section {
     margin-bottom: 30px;
