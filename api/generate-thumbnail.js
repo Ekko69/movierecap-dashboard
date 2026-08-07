@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const SYSTEM_PROMPT = `You are a world-class cinematic thumbnail artist. You receive an exact visual description of a real image and recreate that exact scene with dramatically elevated cinematic production quality. You never change who or what is in the scene — the subjects, people, objects, and setting are preserved exactly. You only enhance the lighting, atmosphere, color grade, and visual drama. Your output always looks like a frame pulled from a blockbuster film — photorealistic, never illustrated or CGI.`;
+const SYSTEM_PROMPT = `You are a master photorealistic image renderer and cinematographer. You take a precise scene description and produce a result that is indistinguishable from a real photograph or a frame from a big-budget Hollywood film. Your images have the weight, texture, and physical believability of real life — not rendered, not illustrated, not painted. Every pore, fabric thread, light reflection, and shadow behaves exactly as it would in the real physical world. You never deviate from photorealism under any circumstances.`;
 
 async function describeImageWithVision(imageUrl, openAiKey) {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -56,44 +56,53 @@ const buildPrompt = (sceneDescription, logoUrl) => {
         ? `\n\nWATERMARK: Place the pink-purple circular logo from ${logoUrl} as a small semi-transparent watermark (~7% of frame width) in the bottom-right corner. Preserve its exact colors. Keep it premium, subtle, and non-intrusive.`
         : '';
 
-    return `Recreate this exact scene with cinematic production enhancement:
+    return `Recreate this exact scene as an ultra-photorealistic cinematic photograph:
 
-ORIGINAL SCENE (do not change any of this):
+ORIGINAL SCENE — preserve every detail exactly:
 ${sceneDescription}
 
-ENHANCEMENT INSTRUCTIONS — apply these on top of the exact scene above:
+REALISM REQUIREMENTS (highest priority):
+- Ultra-photorealistic output — the image must be completely indistinguishable from a real photograph
+- Shot on ARRI Alexa 65 with Panavision anamorphic lenses at 2.39:1, full-frame sensor
+- Physically accurate light behavior: every shadow, reflection, and highlight obeys real-world optics
+- Hyper-detailed skin pores, fabric microfibers, surface imperfections, subsurface scattering on skin
+- Real-world depth of field: subject tack-sharp with natural optical bokeh falloff behind
+- Micro-motion blur on any fast-moving elements to sell physical presence
+- No AI artifacts, no plastic skin, no synthetic-looking surfaces — everything must have real material weight
 
-PHOTOGRAPHY & LIGHTING:
-- Shot on ARRI Alexa with anamorphic lens, subtle 2.39:1 oval bokeh
-- Elevate the existing lighting: add depth, rim lighting on subjects, volumetric haze
-- Shallow depth of field — foreground subject razor-sharp, background softly blurred
-- Add subtle god rays or atmospheric light shafts where appropriate
+CINEMATIC LIGHTING UPGRADE:
+- Elevate the existing lighting into a dramatic Hollywood key-fill-rim three-point setup
+- Add deep, directional shadows with soft penumbras — light behaves like a real physical source
+- Volumetric god rays or light shafts where scene context allows
+- Practical light sources (windows, screens, fire, neon) cast accurate colored spill onto nearby surfaces
+- Specular highlights are tight and physically correct — no diffuse painted-on glows
 
-COLOR GRADE:
-- Hollywood cinematic grade: deep crushed blacks, rich midtones, lifted highlights
-- Teal-and-orange complementary grade with hints of purple in shadows
-- High contrast with visible texture — Blade Runner / Dune / Mad Max aesthetic
+CINEMATIC COLOR GRADE:
+- Full professional DI color grade: deep crushed blacks (lifted just above clip), rich saturated midtones, creamy highlights
+- Teal-and-orange skin/environment separation — Dune / Blade Runner 2049 / Mad Max: Fury Road aesthetic
+- Shadow tint: cool deep blue-purple; highlight tint: warm amber-gold
+- Film grain at ISO 800 equivalent — visible but not distracting, adds analogue texture
 
-ATMOSPHERE:
-- Add thin atmospheric smoke or fog layers for cinematic depth
-- Subtle lens flare from any existing light sources
-- Environmental particles (dust, embers, haze) appropriate to the scene setting
+ATMOSPHERE & DEPTH:
+- Thin layer of atmospheric haze or practical smoke appropriate to the scene — adds aerial perspective
+- Micro-particles (dust motes, floating embers, moisture droplets) visible in light shafts
+- Subtle optical lens flare from practical light sources — anamorphic oval streak, not digital
 
-BRAND COLOR ACCENTS (subtle, not dominant):
-- Weave small touches of these brand colors into the scene: hot pink (#ff0060), magenta (#bd369e), deep purple (#b448b5), teal (#78fac3)
-- Express them as: colored rim lighting on the subject, ambient glow bleeding into background fog, faint neon reflections on surfaces, or a soft color leak from an off-frame light source
-- These accents should feel like a natural part of the scene's lighting — never painted on, never overwhelming the subject
+BRAND COLOR ACCENTS (physical, not decorative):
+- Integrate small amounts of these colors as real light sources or reflections: hot pink (#ff0060), magenta (#bd369e), deep purple (#b448b5), teal (#78fac3)
+- Must appear as: colored practical lights in the background, neon sign spill, rim light from an off-frame source, or colored reflection on a wet surface
+- Must read as physically real — never painted on, never post-process overlaid
 
 COMPOSITION:
-- Keep every subject in the same position as the original
-- Strengthen foreground/background separation
-- Frame is 16:9, 1920×1080, optimized for YouTube mobile viewing
+- All subjects remain in their exact original positions — do not reframe or repose
+- Strengthen foreground/background depth separation via lighting, not repositioning
+- 16:9 frame at 1920×1080, optimized for thumbnail clarity at small mobile sizes
 
-ABSOLUTE RULES:
-- Every person, character, face, and object from the original scene must appear identical
-- Do NOT add new characters, remove characters, or alter anyone's appearance
-- Do NOT add any text, titles, or overlays
-- Output must be fully photorealistic — no illustration, no painting, no CGI${logoInstruction}`;
+NON-NEGOTIABLE RULES:
+- Identical subjects: every person's face, body, clothing must match the original exactly
+- No new characters, no removed characters, no altered appearances
+- Zero text, titles, captions, watermarks, or UI elements of any kind
+- 100% photorealistic — any painterly, illustrated, or rendered quality is a failure${logoInstruction}`;
 };
 
 export default async function handler(req, res) {
