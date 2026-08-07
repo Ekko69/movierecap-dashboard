@@ -132,6 +132,8 @@ function isSafeThumbnailSrc(src) {
 
 const STATUS_LABELS = {
     queued: 'Queued',
+    'fetching-info': 'Fetching info',
+    downloading: 'Downloading',
     uploading: 'Uploading video',
     uploaded: 'Video uploaded',
     'processing-video': 'Processing video',
@@ -249,14 +251,9 @@ batchCompleteModal?.addEventListener('click', (e) => {
     if (e.target === batchCompleteModal) hideBatchCompleteModal();
 });
 
-async function processBatch(concurrency = 2) {
-    if (batchProcessing) return;
-    const runnable = batchQueue.filter(item => item.status === 'queued');
-    if (!runnable.length) return;
-
-    batchProcessing = true;
-    updateBatchUI();
-
+// Generic concurrent queue runner. Each item is isolated: a worker that throws
+// marks only that item failed and the queue continues with the next one.
+function runQueue(items, worker, concurrency, onUpdate) {
     return new Promise((resolve) => {
         let index = 0;
         let active = 0;
@@ -265,40 +262,31 @@ async function processBatch(concurrency = 2) {
         const finalize = () => {
             if (finished) return;
             finished = true;
-            batchProcessing = false;
-            updateBatchUI();
-            const completedCount = batchQueue.filter(i => i.status === 'completed').length;
-            const failedCount = batchQueue.filter(i => i.status === 'failed').length;
-            if (completedCount + failedCount > 0) {
-                showToast(`Batch upload complete: ${completedCount} finished, ${failedCount} failed.`);
-                showBatchCompleteModal(completedCount, failedCount);
-            }
             resolve();
         };
 
         const launchNext = () => {
-            if (index >= runnable.length) {
+            if (index >= items.length) {
                 if (active === 0) finalize();
                 return;
             }
-            const item = runnable[index++];
+            const item = items[index++];
             item.error = null;
-            item.status = 'uploading';
-            updateBatchUI();
             active++;
-            processBatchItem(item)
+            Promise.resolve()
+                .then(() => worker(item))
                 .then(() => {
                     item.status = 'completed';
-                    updateBatchUI();
+                    onUpdate();
                 })
                 .catch((error) => {
                     item.status = 'failed';
-                    item.error = error?.message || 'Batch item failed';
-                    updateBatchUI();
+                    item.error = error?.message || 'Item failed';
+                    onUpdate();
                 })
                 .finally(() => {
                     active--;
-                    if (index < runnable.length) {
+                    if (index < items.length) {
                         launchNext();
                     } else if (active === 0) {
                         finalize();
@@ -306,21 +294,114 @@ async function processBatch(concurrency = 2) {
                 });
         };
 
-        const slots = Math.min(concurrency, runnable.length);
+        const slots = Math.min(concurrency, items.length);
         for (let i = 0; i < slots; i++) {
             launchNext();
         }
     });
 }
 
+async function processBatch(concurrency = 2) {
+    if (batchProcessing) return;
+    const runnable = batchQueue.filter(item => item.status === 'queued');
+    if (!runnable.length) return;
+
+    batchProcessing = true;
+    updateBatchUI();
+
+    await runQueue(runnable, processBatchItem, concurrency, updateBatchUI);
+
+    batchProcessing = false;
+    updateBatchUI();
+    const completedCount = batchQueue.filter(i => i.status === 'completed').length;
+    const failedCount = batchQueue.filter(i => i.status === 'failed').length;
+    if (completedCount + failedCount > 0) {
+        showToast(`Batch upload complete: ${completedCount} finished, ${failedCount} failed.`);
+        showBatchCompleteModal(completedCount, failedCount);
+    }
+}
+
+async function uploadItemVideo(movieId, file) {
+    const videoRef = storageRef(storage, `videos/${movieId}.mp4`);
+    await uploadBytesResumable(videoRef, file);
+    return getDownloadURL(videoRef);
+}
+
+async function uploadThumbnailBlob(movieId, blob, name = 'batch-thumb.jpg') {
+    const thumbRef = storageRef(storage, `thumbnails/${movieId}/${name}`);
+    await uploadBytesResumable(thumbRef, blob);
+    return getDownloadURL(thumbRef);
+}
+
+function isDuplicateMovie(title, year) {
+    return existingMovieKeys.has(buildDuplicateKey(title, year));
+}
+
+// Transcribe -> AI metadata -> OMDb enrichment -> save. Shared by the MP4 batch
+// queue and the bulk YouTube queue. Expects item.movieId, item.videoUrl,
+// item.duration and item.thumbnailURL to already be set.
+async function enrichAndSave(item, onUpdate = updateBatchUI) {
+    item.status = 'transcribing';
+    onUpdate();
+    const transcriptId = await transcribeAudio(item.videoUrl);
+    const transcript = await pollTranscription(transcriptId, () => { });
+    item.transcriptText = transcript.text;
+    item.status = 'transcribed';
+    onUpdate();
+
+    item.status = 'extracting-metadata';
+    onUpdate();
+    const sample = item.transcriptText.substring(0, 5000);
+    const metadata = await extractMovieMetadata(sample);
+    item.metadata = metadata;
+    item.status = 'metadata-extracted';
+    onUpdate();
+
+    item.status = 'omdb';
+    onUpdate();
+    const { title, year } = metadata;
+    let omdbYear = year;
+    if (!omdbYear || omdbYear === 'N/A') {
+        omdbYear = String(1998 + Math.floor(Math.random() * 26));
+        item.metadata.year = omdbYear;
+    }
+    const omdb = await fetchMovieFromOMDB(title, omdbYear);
+    if (omdb) {
+        item.omdb = omdb;
+        if (omdb.Poster && omdb.Poster !== 'N/A') {
+            item.posterUrl = omdb.Poster;
+        }
+    }
+    item.status = 'omdb-done';
+    onUpdate();
+
+    item.status = 'saving';
+    onUpdate();
+    const movieData = {
+        id: item.movieId,
+        title: metadata.title,
+        year: item.metadata.year,
+        description: metadata.description,
+        categories: metadata.genres || [],
+        duration: item.duration,
+        thumbnail: item.thumbnailURL,
+        videoURL: item.videoUrl,
+        featuredThumbnail: item.posterUrl || null,
+        updatedAt: Date.now()
+    };
+    // Checked before the write so this movie is not compared against itself.
+    item.wasDuplicate = isDuplicateMovie(movieData.title, movieData.year);
+    const movieRef = ref(db, 'movies/' + item.movieId);
+    await set(movieRef, movieData);
+}
+
 async function processBatchItem(item) {
-    // Upload video
+    item.status = 'uploading';
+    updateBatchUI();
+
     const movieId = crypto.randomUUID();
     item.movieId = movieId;
-    const videoRef = storageRef(storage, `videos/${movieId}.mp4`);
-    await uploadBytesResumable(videoRef, item.file);
-    const url = await getDownloadURL(videoRef);
-    item.videoUrl = url;
+    item.videoUrl = await uploadItemVideo(movieId, item.file);
     item.status = 'uploaded';
     updateBatchUI();
 
@@ -370,71 +451,15 @@ async function processBatchItem(item) {
             v.onerror = () => reject(new Error('Failed to capture thumbnail'));
         });
 
-        // Upload thumbnail
         item.status = 'uploading-thumbnail';
         updateBatchUI();
-        const thumbRef = storageRef(storage, `thumbnails/${movieId}/batch-thumb.jpg`);
-        await uploadBytesResumable(thumbRef, thumbnailBlob);
-        item.thumbnailURL = await getDownloadURL(thumbRef);
+        item.thumbnailURL = await uploadThumbnailBlob(movieId, thumbnailBlob);
         updateBatchUI();
     } finally {
         if (objectUrl) URL.revokeObjectURL(objectUrl);
     }
 
-    // Transcription step
-    item.status = 'transcribing';
-    updateBatchUI();
-    const transcriptId = await transcribeAudio(url);
-    const transcript = await pollTranscription(transcriptId, () => { });
-    item.transcriptText = transcript.text;
-    item.status = 'transcribed';
-    updateBatchUI();
-
-    // Metadata extraction
-    item.status = 'extracting-metadata';
-    updateBatchUI();
-    const sample = item.transcriptText.substring(0, 5000);
-    const metadata = await extractMovieMetadata(sample);
-    item.metadata = metadata;
-    item.status = 'metadata-extracted';
-    updateBatchUI();
-
-    // OMDb enrichment
-    item.status = 'omdb';
-    updateBatchUI();
-    const { title, year } = metadata;
-    let omdbYear = year;
-    if (!omdbYear || omdbYear === 'N/A') {
-        omdbYear = String(1998 + Math.floor(Math.random() * 26));
-        item.metadata.year = omdbYear;
-    }
-    const omdb = await fetchMovieFromOMDB(title, omdbYear);
-    if (omdb) {
-        item.omdb = omdb;
-        if (omdb.Poster && omdb.Poster !== 'N/A') {
-            item.posterUrl = omdb.Poster;
-        }
-    }
-    item.status = 'omdb-done';
-    updateBatchUI();
-
-    // Save to database
-    item.status = 'saving';
-    updateBatchUI();
-    const movieData = {
-        id: item.movieId,
-        title: metadata.title,
-        year: item.metadata.year,
-        description: metadata.description,
-        categories: metadata.genres || [],
-        duration: item.duration,
-        thumbnail: item.thumbnailURL,
-        videoURL: item.videoUrl,
-        featuredThumbnail: item.posterUrl || null,
-        updatedAt: Date.now()
-    };
-    const movieRef = ref(db, 'movies/' + item.movieId);
-    await set(movieRef, movieData);
+    await enrichAndSave(item, updateBatchUI);
 }
 
 function updateBatchUI() {
