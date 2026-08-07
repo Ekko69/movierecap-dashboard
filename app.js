@@ -567,6 +567,31 @@ function isAutoAiThumbnailEnabled() {
 
 loadAutoAiThumbnailSetting();
 
+// ── Auto-run pipeline setting ──────────────────────────────────────────────
+const AUTO_RUN_KEY = 'autoRunPipeline';
+
+function loadAutoRunSetting() {
+    const toggle = document.getElementById('auto-run-toggle');
+    if (!toggle) return;
+    toggle.checked = localStorage.getItem(AUTO_RUN_KEY) === 'true';
+    toggle.addEventListener('change', () => {
+        localStorage.setItem(AUTO_RUN_KEY, toggle.checked);
+    });
+}
+
+function isAutoRunEnabled() {
+    return localStorage.getItem(AUTO_RUN_KEY) === 'true';
+}
+
+loadAutoRunSetting();
+
+// True while the automated pipeline is driving the form. The individual steps
+// check this so they surface errors to the pipeline instead of blocking the
+// chain on an alert(), and so they don't each kick off the next step themselves.
+let autoRunActive = false;
+// Handle on the in-flight AI thumbnail so the pipeline can wait for it before saving.
+let aiThumbnailPromise = null;
+
 let editingMovieId = null;
 
 let uploadedVideoUrl = null; // Track uploaded URL to avoid duplicates
@@ -1025,6 +1050,7 @@ function resetMediaInputs() {
     currentSubtitleFile = null;
     aiThumbnailGenerating = false;
     aiThumbnailTriggered = false;
+    aiThumbnailPromise = null;
     const aiBtn = document.getElementById('generate-ai-thumbnail-btn');
     if (aiBtn) aiBtn.disabled = true;
     videoInput.value = '';
@@ -1315,11 +1341,31 @@ applyCropBtn.addEventListener('click', () => {
     const ctx = croppedCanvas.getContext('2d');
     ctx.drawImage(captureCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-    // Convert to blob
-    croppedCanvas.toBlob((blob) => {
-        currentThumbnailBlob = blob;
-        const url = URL.createObjectURL(blob);
-        thumbnailImg.src = url;
+    // Composite watermark directly from croppedCanvas (avoids blob URL + crossOrigin taint issue)
+    croppedCanvas.toBlob(async (blob) => {
+        const watermarked = await new Promise((resolve) => {
+            const wCanvas = document.createElement('canvas');
+            wCanvas.width = 1920;
+            wCanvas.height = 1080;
+            const wCtx = wCanvas.getContext('2d');
+            wCtx.drawImage(croppedCanvas, 0, 0, 1920, 1080);
+
+            const logoImg = new Image();
+            const finish = () => wCanvas.toBlob(b => resolve(b || blob), 'image/jpeg', 0.92);
+            logoImg.onload = () => {
+                const logoSize = Math.round(1920 * 0.075);
+                const margin = Math.round(1920 * 0.022);
+                wCtx.globalAlpha = 0.88;
+                wCtx.drawImage(logoImg, 1920 - logoSize - margin, 1080 - logoSize - margin, logoSize, logoSize);
+                wCtx.globalAlpha = 1;
+                finish();
+            };
+            logoImg.onerror = finish;
+            logoImg.src = 'assets/img/logo-icon.png';
+        });
+
+        currentThumbnailBlob = watermarked;
+        thumbnailImg.src = URL.createObjectURL(watermarked);
         thumbnailImg.dataset.editable = 'true';
         thumbnailImg.classList.remove('hidden');
         thumbPlaceholder.classList.add('hidden');
@@ -1366,11 +1412,13 @@ async function uploadVideoIfNeeded(movieId) {
 
 async function syncMovieData() {
     if (!currentVideoFile && !uploadedVideoUrl) {
+        if (autoRunActive) throw new Error("No video available to sync.");
         alert("Please select a video file first.");
         return;
     }
 
     if (!ASSEMBLY_AI_KEY) {
+        if (autoRunActive) throw new Error("AssemblyAI key is missing.");
         alert("Assembly API Key is missing.");
         return;
     }
@@ -1485,13 +1533,14 @@ async function syncMovieData() {
 
         setTimeout(() => {
             progressContainer.classList.add('hidden');
-            alert("Sync completed successfully! Please review the details.");
+            if (!autoRunActive) alert("Sync completed successfully! Please review the details.");
         }, 500);
 
     } catch (error) {
         console.error("Sync error:", error);
-        alert("Sync failed: " + error.message);
         document.querySelector('.progress-label').textContent = "Sync Failed!";
+        if (autoRunActive) throw error;
+        alert("Sync failed: " + error.message);
     } finally {
         btn.disabled = false;
         btn.textContent = "⚡ Sync Movie Data";
@@ -2064,6 +2113,7 @@ async function fetchYouTubeInfo(videoId) {
             await setYouTubeThumbnail(data.thumbnail);
         }
     } catch (err) {
+        if (autoRunActive) throw err;
         alert('Could not fetch YouTube info: ' + err.message);
     } finally {
         fetchBtn.disabled = false;
@@ -2099,7 +2149,9 @@ async function downloadYouTubeVideo(videoId, quality = '360p') {
 
         // Fire AI thumbnail generation in parallel with the download
         if (isAutoAiThumbnailEnabled() && currentYoutubeThumbnailUrl) {
-            generateAIThumbnail();
+            // Kept unawaited so it overlaps the download; the handle lets the
+            // auto-run pipeline wait for it before saving.
+            aiThumbnailPromise = generateAIThumbnail();
         }
 
         while (true) {
@@ -2138,12 +2190,14 @@ async function downloadYouTubeVideo(videoId, quality = '360p') {
 
         dlBtn.disabled = false;
 
-        // Auto-run Sync Movie Data
+        // Auto-run Sync Movie Data — skipped when the pipeline is driving, since
+        // it sequences the sync itself and needs to await the result.
         await new Promise(r => setTimeout(r, 500));
-        syncMovieData();
+        if (!autoRunActive) syncMovieData();
     } catch (err) {
         statusLabel.textContent = 'Error: ' + err.message;
         dlBtn.disabled = false;
+        if (autoRunActive) throw err;
     }
 }
 
@@ -2181,3 +2235,61 @@ document.getElementById('download-youtube-btn')?.addEventListener('click', () =>
 });
 
 document.getElementById('generate-ai-thumbnail-btn')?.addEventListener('click', generateAIThumbnail);
+
+// ── Automated add-movie pipeline ────────────────────────────────────────────
+// With the Auto-run toggle on, entering a YouTube URL drives the whole flow:
+// fetch info → download video → AI thumbnail → sync metadata → save.
+async function runAutoPipeline(videoId, quality) {
+    if (autoRunActive) return;
+    autoRunActive = true;
+
+    const statusLabel = document.getElementById('youtube-status-label');
+    const progressWrap = document.getElementById('youtube-download-progress');
+    progressWrap?.classList.remove('hidden');
+    const setStage = (text) => { if (statusLabel) statusLabel.textContent = text; };
+
+    try {
+        setStage('Auto-run: fetching video info…');
+        await fetchYouTubeInfo(videoId);
+
+        setStage('Auto-run: downloading video…');
+        await downloadYouTubeVideo(videoId, quality);
+
+        setStage('Auto-run: syncing movie data…');
+        await syncMovieData();
+
+        // The AI thumbnail was started alongside the download. Wait for it, or the
+        // save would store the plain YouTube frame it hasn't replaced yet.
+        if (aiThumbnailPromise) {
+            setStage('Auto-run: finishing AI thumbnail…');
+            await aiThumbnailPromise;
+        }
+
+        setStage('Auto-run: saving…');
+        // requestSubmit() (not submit()) so the form's own submit handler and
+        // validation still run, exactly as if the Save button were clicked.
+        movieForm.requestSubmit();
+    } catch (err) {
+        const msg = err?.message || String(err);
+        console.error('[auto-run]', err);
+        setStage('Auto-run stopped: ' + msg);
+        alert(`Auto-run stopped: ${msg}\n\nEverything completed so far is still in the form — you can finish it manually.`);
+    } finally {
+        autoRunActive = false;
+    }
+}
+
+let autoRunDebounce = null;
+document.getElementById('youtube-url')?.addEventListener('input', () => {
+    // Only for new movies — auto-saving over one being edited would clobber it.
+    if (!isAutoRunEnabled() || autoRunActive || editingMovieId) return;
+
+    clearTimeout(autoRunDebounce);
+    autoRunDebounce = setTimeout(() => {
+        const url = document.getElementById('youtube-url').value.trim();
+        const videoId = extractYouTubeVideoId(url);
+        if (!videoId) return;
+        const quality = document.getElementById('youtube-quality')?.value || '360p';
+        runAutoPipeline(videoId, quality);
+    }, 700);
+});
