@@ -2204,19 +2204,27 @@ async function downloadYouTubeVideo(videoId, quality = '360p') {
     }
 }
 
-// Source toggle
-document.getElementById('source-file-btn')?.addEventListener('click', () => {
-    document.getElementById('source-file-btn').classList.add('active');
-    document.getElementById('source-youtube-btn').classList.remove('active');
-    document.getElementById('youtube-input-section').classList.add('hidden');
-    document.getElementById('video-drop-zone').classList.remove('hidden');
-});
+// Source toggle — Upload File / YouTube URL / Bulk YouTube
+const SOURCE_TABS = [
+    { btnId: 'source-file-btn', panelId: 'video-drop-zone' },
+    { btnId: 'source-youtube-btn', panelId: 'youtube-input-section' },
+    { btnId: 'source-bulk-btn', panelId: 'bulk-youtube-section' }
+];
 
-document.getElementById('source-youtube-btn')?.addEventListener('click', () => {
-    document.getElementById('source-youtube-btn').classList.add('active');
-    document.getElementById('source-file-btn').classList.remove('active');
-    document.getElementById('youtube-input-section').classList.remove('hidden');
-    document.getElementById('video-drop-zone').classList.add('hidden');
+function setSourceMode(activeBtnId) {
+    SOURCE_TABS.forEach(({ btnId, panelId }) => {
+        const isActive = btnId === activeBtnId;
+        document.getElementById(btnId)?.classList.toggle('active', isActive);
+        document.getElementById(panelId)?.classList.toggle('hidden', !isActive);
+    });
+    // Bulk rows write themselves to the database, so the manual details form
+    // and its Save button would be misleading while that tab is open.
+    document.getElementById('metadata-section')
+        ?.classList.toggle('hidden', activeBtnId === 'source-bulk-btn');
+}
+
+SOURCE_TABS.forEach(({ btnId }) => {
+    document.getElementById(btnId)?.addEventListener('click', () => setSourceMode(btnId));
 });
 
 document.getElementById('fetch-youtube-btn')?.addEventListener('click', () => {
