@@ -96,6 +96,7 @@
                                      <div class="source-toggle">
                                          <button type="button" id="source-file-btn" class="source-tab active">Upload File</button>
                                          <button type="button" id="source-youtube-btn" class="source-tab">YouTube URL</button>
+                                         <button type="button" id="source-bulk-btn" class="source-tab">📊 Bulk YouTube</button>
                                      </div>
 
                                      <!-- YouTube input section -->
@@ -127,6 +128,35 @@
                                                  </div>
                                                  <span id="youtube-status-label" class="youtube-status-label">Downloading...</span>
                                              </div>
+                                         </div>
+                                     </div>
+
+                                     <!-- Bulk YouTube import section -->
+                                     <div id="bulk-youtube-section" class="hidden">
+                                         <p class="bulk-hint">
+                                             Upload an Excel or CSV file containing YouTube links. Every link is
+                                             imported as its own movie; a link that fails is skipped and the rest
+                                             continue. Requires the local dev server — YouTube download is not
+                                             available on the deployed site.
+                                         </p>
+                                         <div class="bulk-controls">
+                                             <input type="file" id="bulk-excel-file" accept=".xlsx,.xls,.csv">
+                                             <select id="bulk-quality" class="youtube-quality-select">
+                                                 <option value="360p">360p</option>
+                                                 <option value="480p">480p</option>
+                                                 <option value="720p">720p</option>
+                                                 <option value="1080p">1080p</option>
+                                             </select>
+                                         </div>
+                                         <div id="bulk-found-count" class="bulk-found-count">No file selected.</div>
+                                         <ul id="bulk-queue" class="batch-list"></ul>
+                                         <div class="batch-progress">
+                                             <div id="bulk-progress-bar"></div>
+                                         </div>
+                                         <div class="bulk-actions">
+                                             <button type="button" id="bulk-start-btn" class="btn btn-primary btn-sm" disabled>Start Import</button>
+                                             <button type="button" id="bulk-retry-btn" class="btn btn-secondary btn-sm" disabled>Retry Failed</button>
+                                             <button type="button" id="bulk-clear-btn" class="btn btn-ghost btn-sm" disabled>Clear</button>
                                          </div>
                                      </div>
 
@@ -199,7 +229,7 @@
                         </div>
 
                         <!-- Metadata Section -->
-                        <div class="form-section metadata-section">
+                        <div class="form-section metadata-section" id="metadata-section">
                             <h3>Movie Details</h3>
                             <div class="form-grid layout-2-col">
                                 <!-- Left Column: Inputs -->
