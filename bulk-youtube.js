@@ -53,6 +53,8 @@ export function initBulkYoutube(injected) {
             item.status = 'queued';
             item.error = null;
             item.downloadedMb = null;
+            item.thumbnailNote = null;
+            item.usedAiThumbnail = false;
         });
         renderQueue();
         runBulkImport();
@@ -95,6 +97,8 @@ function createQueueItem(videoId) {
         thumbnailURL: null,
         youtubeThumbnail: null,
         downloadedMb: null,
+        usedAiThumbnail: false,
+        thumbnailNote: null,
         wasDuplicate: false,
         movieId: null,
         videoUrl: null,
@@ -149,6 +153,7 @@ const BULK_STATUS_LABELS = {
     queued: 'Queued',
     'fetching-info': 'Fetching info',
     downloading: 'Downloading',
+    'ai-thumbnail': 'Generating AI thumbnail',
     uploading: 'Uploading video',
     'uploading-thumbnail': 'Uploading thumbnail',
     transcribing: 'Transcribing',
@@ -231,6 +236,15 @@ function renderQueue() {
                 errorEl.className = 'batch-item-error';
                 errorEl.textContent = item.error;
                 statusWrap.appendChild(errorEl);
+            }
+
+            // A thumbnail that fell back is not a failed import, but the row
+            // should still say so rather than quietly looking like a success.
+            if (item.thumbnailNote) {
+                const noteEl = document.createElement('span');
+                noteEl.className = 'batch-item-error';
+                noteEl.textContent = item.thumbnailNote;
+                statusWrap.appendChild(noteEl);
             }
 
             li.append(thumb, details, statusWrap);
@@ -319,6 +333,28 @@ async function downloadVideoFile(item, quality) {
     return new File([blob], `${name || item.videoId}.mp4`, { type: 'video/mp4' });
 }
 
+// Resolve the thumbnail for one item. When the ✨ Auto AI Thumbnail toggle is on
+// we run the video's YouTube thumbnail through the AI generator; if that fails we
+// fall back to the plain YouTube thumbnail rather than failing the whole import —
+// losing a movie over a thumbnail would be a bad trade.
+async function resolveThumbnailBlob(item) {
+    if (deps.isAutoAiThumbnailEnabled()) {
+        item.status = 'ai-thumbnail';
+        renderQueue();
+        try {
+            const aiBlob = await deps.generateAIThumbnailBlob(item.youtubeThumbnail);
+            if (aiBlob) {
+                item.usedAiThumbnail = true;
+                return aiBlob;
+            }
+        } catch (error) {
+            item.thumbnailNote = `AI thumbnail failed: ${error.message}`;
+            console.error('[bulk AI thumbnail]', item.videoId, error);
+        }
+    }
+    return fetchThumbnailBlob(item.youtubeThumbnail);
+}
+
 async function processBulkItem(item) {
     const quality = qualitySelect?.value || '360p';
 
@@ -340,12 +376,16 @@ async function processBulkItem(item) {
     renderQueue();
     item.videoUrl = await deps.uploadItemVideo(item.movieId, file);
 
-    item.status = 'uploading-thumbnail';
-    renderQueue();
     if (item.youtubeThumbnail) {
-        const blob = await fetchThumbnailBlob(item.youtubeThumbnail);
-        if (blob) {
-            item.thumbnailURL = await deps.uploadThumbnailBlob(item.movieId, blob, 'yt-thumb.jpg');
+        const thumbBlob = await resolveThumbnailBlob(item);
+        if (thumbBlob) {
+            item.status = 'uploading-thumbnail';
+            renderQueue();
+            item.thumbnailURL = await deps.uploadThumbnailBlob(
+                item.movieId,
+                thumbBlob,
+                item.usedAiThumbnail ? 'ai-thumb.jpg' : 'yt-thumb.jpg'
+            );
         }
     }
     renderQueue();

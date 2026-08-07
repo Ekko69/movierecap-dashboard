@@ -135,6 +135,7 @@ const STATUS_LABELS = {
     queued: 'Queued',
     'fetching-info': 'Fetching info',
     downloading: 'Downloading',
+    'ai-thumbnail': 'Generating AI thumbnail',
     uploading: 'Uploading video',
     uploaded: 'Video uploaded',
     'processing-video': 'Processing video',
@@ -378,12 +379,19 @@ async function enrichAndSave(item, onUpdate = updateBatchUI) {
 
     item.status = 'saving';
     onUpdate();
+    // A movie OMDb could match well enough to give us a real poster is a
+    // stronger result than one we only have a video frame for, so it earns
+    // a spot in Top Picks.
+    const categories = [...(metadata.genres || [])];
+    if (item.posterUrl && !categories.includes('Top Picks')) {
+        categories.push('Top Picks');
+    }
     const movieData = {
         id: item.movieId,
         title: metadata.title,
         year: item.metadata.year,
         description: metadata.description,
-        categories: metadata.genres || [],
+        categories,
         duration: item.duration,
         thumbnail: item.thumbnailURL,
         videoURL: item.videoUrl,
@@ -1996,6 +2004,40 @@ async function setYouTubeThumbnail(url) {
     } catch (_) {}
 }
 
+// Headless AI thumbnail generation: takes a source image URL, returns the
+// watermarked blob. Touches no globals and no DOM, so bulk imports can run it
+// for several videos at once without the queue items clobbering each other.
+async function generateAIThumbnailBlob(sourceThumbnailUrl) {
+    const res = await fetch('/api/generate-thumbnail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ thumbnailUrl: sourceThumbnailUrl })
+    });
+
+    if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const msg = typeof body.error === 'string' ? body.error
+            : body.error ? JSON.stringify(body.error)
+            : `Server error ${res.status}`;
+        throw new Error(msg);
+    }
+
+    const { imageUrl } = await res.json();
+
+    // Fetch generated image through proxy to avoid CORS issues with canvas
+    const imgRes = await fetch(`/api/proxy-image?url=${encodeURIComponent(imageUrl)}`);
+    if (!imgRes.ok) throw new Error('Failed to fetch generated image');
+    const generatedBlob = await imgRes.blob();
+    const generatedObjectUrl = URL.createObjectURL(generatedBlob);
+
+    try {
+        // Composite logo watermark onto generated image using Canvas
+        return await compositeWatermark(generatedObjectUrl);
+    } finally {
+        URL.revokeObjectURL(generatedObjectUrl);
+    }
+}
+
 async function generateAIThumbnail() {
     if (!currentYoutubeThumbnailUrl || aiThumbnailGenerating) return;
 
@@ -2009,31 +2051,7 @@ async function generateAIThumbnail() {
     loadingOverlay.classList.remove('hidden');
 
     try {
-        const res = await fetch('/api/generate-thumbnail', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ thumbnailUrl: currentYoutubeThumbnailUrl })
-        });
-
-        if (!res.ok) {
-            const body = await res.json().catch(() => ({}));
-            const msg = typeof body.error === 'string' ? body.error
-                : body.error ? JSON.stringify(body.error)
-                : `Server error ${res.status}`;
-            throw new Error(msg);
-        }
-
-        const { imageUrl, logoUrl } = await res.json();
-
-        // Fetch generated image through proxy to avoid CORS issues with canvas
-        const imgRes = await fetch(`/api/proxy-image?url=${encodeURIComponent(imageUrl)}`);
-        if (!imgRes.ok) throw new Error('Failed to fetch generated image');
-        const generatedBlob = await imgRes.blob();
-        const generatedObjectUrl = URL.createObjectURL(generatedBlob);
-
-        // Composite logo watermark onto generated image using Canvas
-        const composited = await compositeWatermark(generatedObjectUrl);
-        URL.revokeObjectURL(generatedObjectUrl);
+        const composited = await generateAIThumbnailBlob(currentYoutubeThumbnailUrl);
 
         currentThumbnailBlob = composited;
         thumbnailImg.src = URL.createObjectURL(composited);
@@ -2341,5 +2359,7 @@ initBulkYoutube({
     formatDuration,
     showToast,
     showBatchCompleteModal,
-    runQueue
+    runQueue,
+    generateAIThumbnailBlob,
+    isAutoAiThumbnailEnabled
 });
