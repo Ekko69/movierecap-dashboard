@@ -16,6 +16,7 @@ import {
     getDownloadURL,
     deleteObject
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
+import { initBulkYoutube, isBulkProcessing } from './bulk-youtube.js';
 
 // Firebase Config
 // Firebase Config
@@ -2328,4 +2329,15 @@ document.getElementById('youtube-url')?.addEventListener('input', () => {
         const quality = document.getElementById('youtube-quality')?.value || '360p';
         runAutoPipeline(videoId, quality);
     }, 700);
+});
+
+initBulkYoutube({
+    extractYouTubeVideoId,
+    uploadItemVideo,
+    uploadThumbnailBlob,
+    enrichAndSave,
+    formatDuration,
+    showToast,
+    showBatchCompleteModal,
+    runQueue
 });
