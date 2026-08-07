@@ -1735,6 +1735,9 @@ onValue(moviesRef, (snapshot) => {
     } else {
         allMovies = Object.values(data);
     }
+    existingMovieKeys = new Set(
+        allMovies.map((movie) => buildDuplicateKey(movie.title, movie.year))
+    );
     applyFiltersAndRender();
 });
 
