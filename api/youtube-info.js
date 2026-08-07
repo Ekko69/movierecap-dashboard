@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { runYtDlp } from './_ytdlp.js';
 
 export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
 
     try {
-        const data = await runYtDlp(['--dump-json', '--no-download', url]);
+        const data = await runYtDlp(['--dump-json', '--no-download', '--no-playlist', url]);
         const meta = JSON.parse(data);
 
         return res.status(200).json({
@@ -30,19 +30,4 @@ export default async function handler(req, res) {
         console.error('youtube-info error:', err.message);
         return res.status(500).json({ error: err.message });
     }
-}
-
-function runYtDlp(args) {
-    return new Promise((resolve, reject) => {
-        const proc = spawn('python3', ['-m', 'yt_dlp', ...args]);
-        let stdout = '';
-        let stderr = '';
-        proc.stdout.on('data', d => stdout += d);
-        proc.stderr.on('data', d => stderr += d);
-        proc.on('close', code => {
-            if (code !== 0) reject(new Error(stderr.trim() || `yt-dlp exited ${code}`));
-            else resolve(stdout.trim());
-        });
-        proc.on('error', reject);
-    });
 }

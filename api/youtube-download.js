@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { runYtDlp, streamYtDlp } from './_ytdlp.js';
 
 export const config = { maxDuration: 60 };
 
@@ -28,65 +28,35 @@ export default async function handler(req, res) {
         // First, get video title for Content-Disposition
         let title = videoId;
         try {
-            const meta = JSON.parse(await runYtDlpCollect(['--dump-json', '--no-download', url]));
+            const meta = JSON.parse(await runYtDlp(['--dump-json', '--no-download', '--no-playlist', url]));
             title = (meta.title || videoId).replace(/[^a-zA-Z0-9_\-. ]/g, '').trim() || videoId;
         } catch (_) {}
 
-        res.setHeader('Content-Type', 'video/mp4');
-        res.setHeader('Content-Disposition', `attachment; filename="${title}.mp4"`);
-
-        // Stream yt-dlp output directly to response
-        // --extractor-args android bypasses YouTube's SABR streaming restriction
-        const proc = spawn('python3', [
-            '-m', 'yt_dlp',
-            '-f', formatSelector,
-            '--extractor-args', 'youtube:player_client=android',
-            '--no-playlist',
-            '-o', '-',
-            url
-        ]);
-
-        proc.stdout.pipe(res);
-
-        proc.stderr.on('data', chunk => {
-            // Log to server console but don't send to client (headers already sent)
-            process.stderr.write(chunk);
-        });
-
-        proc.on('close', (code) => {
-            if (code !== 0 && !res.headersSent) {
-                res.status(500).json({ error: `yt-dlp exited with code ${code}` });
-            } else {
-                res.end();
+        // Stream yt-dlp output directly to the response, retrying across player clients
+        // while nothing has been written yet
+        streamYtDlp(
+            ['-f', formatSelector, '--no-playlist', '-o', '-', url],
+            res,
+            {
+                // Set download headers only once bytes are actually flowing, so an
+                // extraction failure can still return a JSON error instead of a
+                // zero-byte .mp4 attachment
+                onFirstByte: () => {
+                    res.setHeader('Content-Type', 'video/mp4');
+                    res.setHeader('Content-Disposition', `attachment; filename="${title}.mp4"`);
+                },
+                onError: (err, wroteBytes) => {
+                    console.error('youtube-download error:', err.message);
+                    if (!wroteBytes && !res.headersSent) {
+                        res.status(500).json({ error: err.message });
+                    } else {
+                        res.end();
+                    }
+                }
             }
-        });
-
-        proc.on('error', (err) => {
-            console.error('yt-dlp spawn error:', err.message);
-            if (!res.headersSent) {
-                res.status(500).json({ error: err.message });
-            } else {
-                res.end();
-            }
-        });
-
+        );
     } catch (err) {
         console.error('youtube-download error:', err.message);
         if (!res.headersSent) res.status(500).json({ error: err.message });
     }
-}
-
-function runYtDlpCollect(args) {
-    return new Promise((resolve, reject) => {
-        const proc = spawn('python3', ['-m', 'yt_dlp', ...args]);
-        let stdout = '';
-        let stderr = '';
-        proc.stdout.on('data', d => stdout += d);
-        proc.stderr.on('data', d => stderr += d);
-        proc.on('close', code => {
-            if (code !== 0) reject(new Error(stderr.trim() || `yt-dlp exited ${code}`));
-            else resolve(stdout.trim());
-        });
-        proc.on('error', reject);
-    });
 }
