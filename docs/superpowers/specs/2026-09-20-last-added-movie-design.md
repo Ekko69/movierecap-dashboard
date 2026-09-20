@@ -120,8 +120,10 @@ or pagination state can affect it.
 Rendered fields: thumbnail, title, year, duration, relative added-time,
 description, source link.
 
-The meta line reads `<year> \u00b7 <duration> \u00b7 added <relative time>`, reusing the
-existing `formatDuration` (app.js:236) for duration. Relative time is rendered
+The meta line reads `<year> · <duration> · added <relative time>`. `duration`
+is already stored as a display string (the form field is free text; the batch
+path stores the output of `formatDuration`), so the panel renders it verbatim
+and does **not** call `formatDuration` itself. Relative time is rendered
 by a small new helper with a fixed vocabulary: `just now` (< 60s), `N min ago`
 (< 60m), `N hr ago` (< 24h), `N days ago` (< 7d), and the absolute date beyond
 that. It is derived from `updatedAt` at render time, so it refreshes whenever
@@ -133,8 +135,12 @@ Two deliberate choices:
   interpolates movie fields directly into an `innerHTML` template, so
   AI-extracted titles and descriptions land unescaped. The duplicate banner
   already avoids this. The new panel follows the banner, not the card.
-- **Thumbnail passes through `isSafeThumbnailSrc`** (app.js:130), matching
-  every other thumbnail render in the app.
+- **Thumbnail passes through `isDisplayableImageSrc`** (app.js:145) — the
+  scheme allow-list, *not* `isSafeThumbnailSrc` (app.js:130). The latter is a
+  canvas-taint test that only accepts same-origin URLs; every persisted
+  thumbnail is cross-origin (firebasestorage.googleapis.com, i.ytimg.com), so
+  using it here would reject all of them and the panel would permanently show
+  the fallback icon. app.js:140 documents this distinction.
 
 Buttons use `btn btn-sm btn-secondary` and `btn btn-ghost` — both confirmed
 present in style.css. (A prior commit, 4d16316, had to fix a banner button that
