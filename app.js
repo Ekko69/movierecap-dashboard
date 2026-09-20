@@ -1166,6 +1166,26 @@ function scheduleDuplicateCheck() {
     document.getElementById(id)?.addEventListener('input', scheduleDuplicateCheck);
 });
 
+duplicateWarningDismiss?.addEventListener('click', () => {
+    dismissedDuplicateKey = buildDuplicateKey(
+        document.getElementById('title').value,
+        document.getElementById('year').value
+    );
+    hideDuplicateWarning();
+});
+
+duplicateWarningOpen?.addEventListener('click', () => {
+    const match = duplicateWarningMatch;
+    if (!match) return;
+    if (currentVideoFile || uploadedVideoUrl) {
+        const proceed = confirm(
+            'This discards the video you are working on and opens the existing movie instead. Continue?'
+        );
+        if (!proceed) return;
+    }
+    openForm(match);
+});
+
 function resetMediaInputs() {
     currentVideoFile = null;
     currentThumbnailBlob = null;
