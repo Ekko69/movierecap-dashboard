@@ -2,6 +2,7 @@
   "type": "module",
   "scripts": {
     "dev": "node dev-server.js",
+    "test": "node --test",
     "setup:ytdlp": "uv venv --python 3.12 .venv && VIRTUAL_ENV=.venv uv pip install yt-dlp",
     "update:ytdlp": "VIRTUAL_ENV=.venv uv pip install --upgrade yt-dlp"
   },
