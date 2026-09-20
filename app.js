@@ -68,7 +68,11 @@ function buildDuplicateKey(title, year) {
     return `${t}::${y}`;
 }
 
-let existingMovieKeys = new Set();
+let existingMoviesByKey = new Map();
+// Duplicate key the banner was last shown for, so Save does not warn a second time.
+let warnedDuplicateKey = null;
+// Duplicate key the user explicitly dismissed, so the banner stays hidden for it.
+let dismissedDuplicateKey = null;
 
 
 // DOM Elements
@@ -336,7 +340,18 @@ async function uploadThumbnailBlob(movieId, blob, name = 'batch-thumb.jpg') {
 }
 
 function isDuplicateMovie(title, year) {
-    return existingMovieKeys.has(buildDuplicateKey(title, year));
+    return existingMoviesByKey.has(buildDuplicateKey(title, year));
+}
+
+// Returns the existing movie that collides with this title/year, or null.
+// Never returns the movie currently being edited, so editing a movie does not
+// flag it against itself.
+function findDuplicateMovie(title, year) {
+    if (!normalizeTitle(title)) return null;
+    const match = existingMoviesByKey.get(buildDuplicateKey(title, year));
+    if (!match) return null;
+    if (editingMovieId && match.id === editingMovieId) return null;
+    return match;
 }
 
 // Transcribe -> AI metadata -> OMDb enrichment -> save. Shared by the MP4 batch
@@ -1590,7 +1605,7 @@ async function handleFormSubmit(e) {
 
     // Duplicate detection
     const dupKey = buildDuplicateKey(title, year);
-    if (!editingMovieId && existingMovieKeys.has(dupKey)) {
+    if (!editingMovieId && existingMoviesByKey.has(dupKey)) {
         const proceed = confirm("A movie with the same title and year already exists. Save anyway?");
         if (!proceed) return;
     }
@@ -1770,8 +1785,8 @@ onValue(moviesRef, (snapshot) => {
     } else {
         allMovies = Object.values(data);
     }
-    existingMovieKeys = new Set(
-        allMovies.map((movie) => buildDuplicateKey(movie.title, movie.year))
+    existingMoviesByKey = new Map(
+        allMovies.map((movie) => [buildDuplicateKey(movie.title, movie.year), movie])
     );
     applyFiltersAndRender();
 });
