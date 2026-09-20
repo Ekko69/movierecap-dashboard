@@ -1900,6 +1900,70 @@ const prevPageBtn = document.getElementById('prev-page');
 const nextPageBtn = document.getElementById('next-page');
 const pageInfo = document.getElementById('page-info');
 
+// Last added movie panel
+const lastAddedPanel = document.getElementById('last-added');
+const lastAddedThumb = document.getElementById('last-added-thumb');
+const lastAddedTitle = document.getElementById('last-added-title');
+const lastAddedMeta = document.getElementById('last-added-meta');
+const lastAddedDesc = document.getElementById('last-added-desc');
+const lastAddedSource = document.getElementById('last-added-source');
+const lastAddedEditBtn = document.getElementById('last-added-edit');
+const lastAddedCopyBtn = document.getElementById('last-added-copy');
+
+// The movie currently on the panel, so the Edit and Copy buttons act on it
+// without re-deriving it.
+let lastAddedMovie = null;
+
+// Renders the most recently added movie. Every field goes in via textContent —
+// titles and descriptions come from AI extraction and OMDb, and createMovieCard's
+// innerHTML template is not a pattern to copy here.
+function renderLastAdded() {
+    lastAddedMovie = pickLastAdded(allMovies);
+
+    if (!lastAddedMovie) {
+        lastAddedPanel.classList.add('hidden');
+        return;
+    }
+
+    const movie = lastAddedMovie;
+
+    // isDisplayableImageSrc, not isSafeThumbnailSrc: the latter is a canvas-taint
+    // test that only passes same-origin URLs, and every stored thumbnail is
+    // cross-origin. See the comment above both functions.
+    lastAddedThumb.src = isDisplayableImageSrc(movie.thumbnail)
+        ? movie.thumbnail
+        : 'assets/img/app-icon.png';
+    lastAddedThumb.alt = movie.title || '';
+
+    lastAddedTitle.textContent = movie.title || 'Untitled';
+
+    // duration is already a display string ("14m 20s" from the form, "12:43"
+    // from formatDuration in the batch path), so it needs no formatting.
+    const metaParts = [];
+    if (movie.year) metaParts.push(String(movie.year));
+    if (movie.duration) metaParts.push(movie.duration);
+    metaParts.push(`added ${formatRelativeTime(movie.updatedAt, Date.now())}`);
+    lastAddedMeta.textContent = metaParts.join(' · ');
+
+    lastAddedDesc.textContent = movie.description || '';
+
+    // Movies added before sourceURL existed, and anything uploaded from disk,
+    // have no source to show.
+    if (movie.sourceURL) {
+        lastAddedSource.href = movie.sourceURL;
+        lastAddedSource.textContent = movie.sourceURL;
+        lastAddedSource.classList.remove('hidden');
+        lastAddedCopyBtn.classList.remove('hidden');
+    } else {
+        lastAddedSource.removeAttribute('href');
+        lastAddedSource.textContent = '';
+        lastAddedSource.classList.add('hidden');
+        lastAddedCopyBtn.classList.add('hidden');
+    }
+
+    lastAddedPanel.classList.remove('hidden');
+}
+
 // Listeners
 searchInput.addEventListener('input', (e) => {
     currentFilter.search = e.target.value.toLowerCase();
@@ -1944,6 +2008,7 @@ onValue(moviesRef, (snapshot) => {
     );
     applyFiltersAndRender();
     if (!movieFormPanel.classList.contains('hidden')) refreshDuplicateWarning();
+    renderLastAdded();
 });
 
 function applyFiltersAndRender() {
