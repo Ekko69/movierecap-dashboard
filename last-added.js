@@ -54,3 +54,13 @@ export function formatRelativeTime(timestamp, now) {
         day: 'numeric'
     });
 }
+
+// The most recently added movie. updatedAt is stamped only on creation (never
+// on edit), so the greatest value is genuinely the last one added.
+export function pickLastAdded(movies) {
+    if (!Array.isArray(movies) || movies.length === 0) return null;
+
+    return movies.reduce((best, movie) => (
+        (movie.updatedAt || 0) > (best.updatedAt || 0) ? movie : best
+    ));
+}

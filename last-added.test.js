@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { youtubeWatchURL, buildSourceURL, formatRelativeTime } from './last-added.js';
+import { youtubeWatchURL, buildSourceURL, formatRelativeTime, pickLastAdded } from './last-added.js';
 
 test('youtubeWatchURL builds a canonical watch URL', () => {
     assert.equal(
@@ -77,4 +77,32 @@ test('formatRelativeTime handles a missing timestamp', () => {
     assert.equal(formatRelativeTime(0, NOW), 'unknown');
     assert.equal(formatRelativeTime(null, NOW), 'unknown');
     assert.equal(formatRelativeTime(undefined, NOW), 'unknown');
+});
+
+test('pickLastAdded returns the movie with the greatest updatedAt', () => {
+    const movies = [
+        { id: 'a', title: 'Alpha', updatedAt: 100 },
+        { id: 'c', title: 'Gamma', updatedAt: 300 },
+        { id: 'b', title: 'Beta', updatedAt: 200 }
+    ];
+    assert.equal(pickLastAdded(movies).id, 'c');
+});
+
+test('pickLastAdded treats a missing updatedAt as oldest', () => {
+    const movies = [
+        { id: 'legacy', title: 'No timestamp' },
+        { id: 'fresh', title: 'Timestamped', updatedAt: 1 }
+    ];
+    assert.equal(pickLastAdded(movies).id, 'fresh');
+});
+
+test('pickLastAdded still returns a movie when every record predates updatedAt', () => {
+    const movies = [{ id: 'x', title: 'X' }, { id: 'y', title: 'Y' }];
+    assert.equal(pickLastAdded(movies).id, 'x');
+});
+
+test('pickLastAdded returns null for nothing to pick', () => {
+    assert.equal(pickLastAdded([]), null);
+    assert.equal(pickLastAdded(null), null);
+    assert.equal(pickLastAdded(undefined), null);
 });
