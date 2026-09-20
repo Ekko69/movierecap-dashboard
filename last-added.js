@@ -19,3 +19,38 @@ export function buildSourceURL(input, extractVideoId) {
     if (!trimmed) return null;
     return youtubeWatchURL(extractVideoId(trimmed));
 }
+
+const SECOND_MS = 1000;
+const MINUTE_MS = 60 * SECOND_MS;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+// Human-readable age of a timestamp. `now` is a parameter, not Date.now(), so
+// this stays deterministic under test.
+export function formatRelativeTime(timestamp, now) {
+    if (!timestamp) return 'unknown';
+
+    const elapsed = now - timestamp;
+
+    // A timestamp in the future means clock skew between this browser and
+    // whichever client wrote the record. "just now" is the honest reading;
+    // a negative duration is not.
+    if (elapsed < MINUTE_MS) return 'just now';
+
+    if (elapsed < HOUR_MS) {
+        return `${Math.floor(elapsed / MINUTE_MS)} min ago`;
+    }
+    if (elapsed < DAY_MS) {
+        return `${Math.floor(elapsed / HOUR_MS)} hr ago`;
+    }
+    if (elapsed < 7 * DAY_MS) {
+        const days = Math.floor(elapsed / DAY_MS);
+        return `${days} day${days === 1 ? '' : 's'} ago`;
+    }
+
+    return new Date(timestamp).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
