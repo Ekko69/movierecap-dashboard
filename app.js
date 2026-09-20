@@ -17,6 +17,12 @@ import {
     deleteObject
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 import { initBulkYoutube, isBulkProcessing, resetBulkYoutube } from './bulk-youtube.js';
+import {
+    youtubeWatchURL,
+    buildSourceURL,
+    formatRelativeTime,
+    pickLastAdded
+} from './last-added.js';
 
 // Firebase Config
 // Firebase Config
@@ -1820,9 +1826,19 @@ async function handleFormSubmit(e) {
         }
 
         if (videoUrl) movieData.videoURL = videoUrl;
-        if (videoUrl) movieData.videoURL = videoUrl;
         if (thumbnailUrl) movieData.thumbnail = thumbnailUrl;
         if (featuredThumbnailUrl) movieData.featuredThumbnail = featuredThumbnailUrl;
+
+        // Where this recap came from. videoURL points at our Storage copy, which
+        // says nothing about the source. Absent when the video was uploaded from
+        // disk rather than pulled from YouTube. On an edit the input is blank
+        // (resetMediaInputs clears it) and update() only writes the keys it is
+        // given, so an existing sourceURL survives.
+        const sourceURL = buildSourceURL(
+            document.getElementById('youtube-url')?.value,
+            extractYouTubeVideoId
+        );
+        if (sourceURL) movieData.sourceURL = sourceURL;
 
         // Handle featured thumbnail update logic
         // REMOVED: Consolidated to main thumbnail.
