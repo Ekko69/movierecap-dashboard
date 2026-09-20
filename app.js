@@ -1777,7 +1777,12 @@ async function handleFormSubmit(e) {
             title: title || "New Movie",
             year: year || new Date().getFullYear(),
             duration,
-            categories: selectedCategories.length ? selectedCategories : ['New'],
+            // Only a brand-new movie gets stamped "New". When editing, clearing every
+            // chip means the user removed the status deliberately — re-applying it here
+            // is what dropped edited movies back into the New list.
+            categories: selectedCategories.length
+                ? selectedCategories
+                : (editingMovieId ? [] : ['New']),
             description: description || "No description"
         };
 
@@ -1953,9 +1958,10 @@ function updatePaginationUI(totalPages) {
 }
 
 function createMovieCard(movie) {
-    const categoriesDisplay = movie.categories && Array.isArray(movie.categories)
-        ? movie.categories.join(', ')
-        : (movie.category || 'Uncategorized');
+    const categoryList = Array.isArray(movie.categories)
+        ? movie.categories
+        : (movie.category ? [movie.category] : []);
+    const categoriesDisplay = categoryList.length ? categoryList.join(', ') : 'Uncategorized';
 
     const div = document.createElement('div');
     div.className = 'movie-card';
