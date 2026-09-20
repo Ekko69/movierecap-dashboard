@@ -237,6 +237,17 @@
                                     <div class="form-group">
                                         <label for="title">Movie Title</label>
                                         <input type="text" id="title" placeholder="e.g. Inception">
+                                        <div id="duplicate-warning" class="duplicate-warning hidden">
+                                            <img id="duplicate-warning-thumb" class="duplicate-warning-thumb" alt="">
+                                            <div class="duplicate-warning-body">
+                                                <span class="duplicate-warning-label">⚠ Possible duplicate</span>
+                                                <span id="duplicate-warning-text"></span>
+                                                <div class="duplicate-warning-actions">
+                                                    <button type="button" id="duplicate-warning-open" class="btn btn-sm btn-warning">Open existing</button>
+                                                    <button type="button" id="duplicate-warning-dismiss" class="btn btn-sm">Dismiss</button>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <div class="row-group">
