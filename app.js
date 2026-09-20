@@ -1697,9 +1697,11 @@ async function handleFormSubmit(e) {
     let title = document.getElementById('title').value;
     let year = document.getElementById('year').value;
 
-    // Duplicate detection
+    // Duplicate detection. The inline banner normally warns much earlier; this only
+    // catches a collision the banner never surfaced — e.g. a title set through a path
+    // that does not fire an input event.
     const dupKey = buildDuplicateKey(title, year);
-    if (!editingMovieId && existingMoviesByKey.has(dupKey)) {
+    if (!editingMovieId && existingMoviesByKey.has(dupKey) && dupKey !== warnedDuplicateKey) {
         const proceed = confirm("A movie with the same title and year already exists. Save anyway?");
         if (!proceed) return;
     }
