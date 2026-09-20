@@ -9,3 +9,13 @@ export function youtubeWatchURL(videoId) {
     if (!videoId) return null;
     return `https://www.youtube.com/watch?v=${videoId}`;
 }
+
+// Canonical watch URL for a pasted string, or null when it holds no video id.
+// extractVideoId is injected (app.js owns the real one) to keep this module
+// import-free.
+export function buildSourceURL(input, extractVideoId) {
+    if (!input) return null;
+    const trimmed = String(input).trim();
+    if (!trimmed) return null;
+    return youtubeWatchURL(extractVideoId(trimmed));
+}
