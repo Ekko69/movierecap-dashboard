@@ -1964,6 +1964,23 @@ function renderLastAdded() {
     lastAddedPanel.classList.remove('hidden');
 }
 
+lastAddedEditBtn?.addEventListener('click', () => {
+    if (lastAddedMovie) openForm(lastAddedMovie);
+});
+
+lastAddedCopyBtn?.addEventListener('click', async () => {
+    if (!lastAddedMovie?.sourceURL) return;
+    try {
+        await navigator.clipboard.writeText(lastAddedMovie.sourceURL);
+        showToast('Source link copied');
+    } catch (error) {
+        // Denied permission, or a non-secure context. The link is on screen and
+        // selectable, so this is a degraded path rather than a dead end.
+        console.error('[last added] clipboard', error);
+        showToast('Could not copy — select the link to copy it manually');
+    }
+});
+
 // Listeners
 searchInput.addEventListener('input', (e) => {
     currentFilter.search = e.target.value.toLowerCase();
