@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { youtubeWatchURL, buildSourceURL, formatRelativeTime, pickLastAdded } from './last-added.js';
+import { youtubeWatchURL, formatRelativeTime, pickLastAdded } from './last-added.js';
 
 test('youtubeWatchURL builds a canonical watch URL', () => {
     assert.equal(
@@ -14,41 +14,6 @@ test('youtubeWatchURL returns null for a missing id', () => {
     assert.equal(youtubeWatchURL(null), null);
     assert.equal(youtubeWatchURL(''), null);
     assert.equal(youtubeWatchURL(undefined), null);
-});
-
-// A stand-in for app.js's extractYouTubeVideoId. Deliberately ANCHORED, unlike
-// the real one: an unanchored stub matches an untrimmed string just as well, so
-// it would let buildSourceURL's trim() be deleted without a test failing.
-// The real extractor also accepts youtu.be, /shorts/ and /embed/ URLs; those
-// shapes are its business, not this module's, and get covered when the panel is
-// wired to it.
-function fakeExtract(url) {
-    const m = String(url).match(/^https:\/\/www\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/);
-    return m ? m[1] : null;
-}
-
-test('buildSourceURL strips playlist and timestamp parameters', () => {
-    assert.equal(
-        buildSourceURL(
-            'https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL123&t=42s',
-            fakeExtract
-        ),
-        'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
-    );
-});
-
-test('buildSourceURL tolerates surrounding whitespace', () => {
-    assert.equal(
-        buildSourceURL('  https://www.youtube.com/watch?v=dQw4w9WgXcQ  ', fakeExtract),
-        'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
-    );
-});
-
-test('buildSourceURL returns null when there is no video id', () => {
-    assert.equal(buildSourceURL('https://example.com/nope', fakeExtract), null);
-    assert.equal(buildSourceURL('', fakeExtract), null);
-    assert.equal(buildSourceURL(null, fakeExtract), null);
-    assert.equal(buildSourceURL('   ', fakeExtract), null);
 });
 
 // Fixed reference point so these assertions never depend on the wall clock.
@@ -70,7 +35,16 @@ test('formatRelativeTime describes the recent past', () => {
 });
 
 test('formatRelativeTime falls back to an absolute date past a week', () => {
-    assert.equal(formatRelativeTime(NOW - 7 * DAY, NOW), 'Sep 13, 2026');
+    // Computed, not hardcoded: formatRelativeTime renders the viewer's LOCAL
+    // calendar day, which is the right thing to show a user but makes a literal
+    // 'Sep 13, 2026' fail east of UTC+12. npm test also pins TZ=UTC.
+    const weekAgo = NOW - 7 * DAY;
+    const expected = new Date(weekAgo).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+    assert.equal(formatRelativeTime(weekAgo, NOW), expected);
 });
 
 test('formatRelativeTime treats a future timestamp as just now', () => {

@@ -10,15 +10,6 @@ export function youtubeWatchURL(videoId) {
     return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
 }
 
-// Canonical watch URL for a pasted string, or null when it holds no video id.
-// extractVideoId is injected (app.js owns the real one) to keep this module
-// import-free.
-export function buildSourceURL(input, extractVideoId) {
-    if (!input) return null;
-    const trimmed = String(input).trim();
-    return youtubeWatchURL(extractVideoId(trimmed));
-}
-
 const SECOND_MS = 1000;
 const MINUTE_MS = 60 * SECOND_MS;
 const HOUR_MS = 60 * MINUTE_MS;

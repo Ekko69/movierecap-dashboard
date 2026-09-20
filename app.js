@@ -19,7 +19,6 @@ import {
 import { initBulkYoutube, isBulkProcessing, resetBulkYoutube } from './bulk-youtube.js';
 import {
     youtubeWatchURL,
-    buildSourceURL,
     formatRelativeTime,
     pickLastAdded
 } from './last-added.js';
@@ -666,6 +665,11 @@ let aiThumbnailPromise = null;
 let editingMovieId = null;
 
 let uploadedVideoUrl = null; // Track uploaded URL to avoid duplicates
+// The YouTube link the current video was actually downloaded from. Captured at
+// download time rather than read from #youtube-url at save time: the input keeps
+// its text when the user switches to the Upload File tab, which would otherwise
+// stamp an unrelated source onto a movie uploaded from disk.
+let currentSourceURL = null;
 let fetchedPosterUrl = null; // Store poster URL from OMDB
 
 
@@ -1227,6 +1231,7 @@ function resetMediaInputs() {
     currentVideoFile = null;
     currentThumbnailBlob = null;
     currentYoutubeThumbnailUrl = null;
+    currentSourceURL = null;
     currentSubtitleFile = null;
     aiThumbnailGenerating = false;
     aiThumbnailTriggered = false;
@@ -1312,6 +1317,10 @@ function handleVideoSelect(file) {
 
     // Reset uploaded URL if video changes
     uploadedVideoUrl = null;
+
+    // Any newly selected video is from disk unless the YouTube download path
+    // sets this again immediately after calling us.
+    currentSourceURL = null;
 }
 
 // Crop Interface Elements
@@ -1833,15 +1842,10 @@ async function handleFormSubmit(e) {
         if (featuredThumbnailUrl) movieData.featuredThumbnail = featuredThumbnailUrl;
 
         // Where this recap came from. videoURL points at our Storage copy, which
-        // says nothing about the source. Absent when the video was uploaded from
-        // disk rather than pulled from YouTube. On an edit the input is blank
-        // (resetMediaInputs clears it) and update() only writes the keys it is
-        // given, so an existing sourceURL survives.
-        const sourceURL = buildSourceURL(
-            document.getElementById('youtube-url')?.value,
-            extractYouTubeVideoId
-        );
-        if (sourceURL) movieData.sourceURL = sourceURL;
+        // says nothing about the source. Absent when the video came from disk.
+        // On an edit this is null (resetMediaInputs clears it) and update() only
+        // writes the keys it is given, so an existing sourceURL survives.
+        if (currentSourceURL) movieData.sourceURL = currentSourceURL;
 
         // Handle featured thumbnail update logic
         // REMOVED: Consolidated to main thumbnail.
@@ -1950,7 +1954,11 @@ function renderLastAdded() {
     // Movies added before sourceURL existed, and anything uploaded from disk,
     // have no source to show.
     if (movie.sourceURL) {
-        lastAddedSource.href = movie.sourceURL;
+        // Guarded like the thumbnail src: this value comes from the database and
+        // an http(s) allow-list keeps javascript: out of a target="_blank" anchor.
+        lastAddedSource.href = /^https?:\/\//i.test(movie.sourceURL)
+            ? movie.sourceURL
+            : '#';
         lastAddedSource.textContent = movie.sourceURL;
         lastAddedSource.classList.remove('hidden');
         lastAddedCopyBtn.classList.remove('hidden');
@@ -1980,6 +1988,12 @@ lastAddedCopyBtn?.addEventListener('click', async () => {
         showToast('Could not copy — select the link to copy it manually');
     }
 });
+
+// onValue only fires on data change, so without this the panel would still read
+// "added just now" hours later. Re-rendering is a handful of textContent writes.
+setInterval(() => {
+    if (lastAddedMovie) renderLastAdded();
+}, 60000);
 
 // Listeners
 searchInput.addEventListener('input', (e) => {
@@ -2478,6 +2492,8 @@ async function downloadYouTubeVideo(videoId, quality = '360p') {
         const file = new File([blob], `${title}.mp4`, { type: 'video/mp4' });
 
         handleVideoSelect(file);
+        // Must follow handleVideoSelect, which clears this.
+        currentSourceURL = youtubeWatchURL(videoId);
         statusLabel.textContent = 'Done! Starting sync...';
 
         // Reveal the video drop zone so the preview is visible
