@@ -377,6 +377,23 @@
                 </div>
             </section>
 
+            <!-- Last added movie. Deliberately outside .content-body so no
+                 search, filter, sort or pagination state can affect it. -->
+            <section id="last-added" class="last-added hidden">
+                <img id="last-added-thumb" class="last-added-thumb" alt="">
+                <div class="last-added-body">
+                    <span class="last-added-label">⏱ Last added</span>
+                    <span id="last-added-title" class="last-added-title"></span>
+                    <span id="last-added-meta" class="last-added-meta"></span>
+                    <p id="last-added-desc" class="last-added-desc"></p>
+                    <a id="last-added-source" class="last-added-source" target="_blank" rel="noopener"></a>
+                    <div class="last-added-actions">
+                        <button type="button" id="last-added-edit" class="btn btn-sm btn-secondary">Edit</button>
+                        <button type="button" id="last-added-copy" class="btn btn-sm btn-ghost">Copy link</button>
+                    </div>
+                </div>
+            </section>
+
             <!-- Movie Grid -->
             <section class="content-body">
                 <div class="filter-bar">
