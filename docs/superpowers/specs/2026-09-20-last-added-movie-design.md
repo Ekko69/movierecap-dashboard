@@ -181,10 +181,27 @@ or writes the panel.
 
 ### 6. Testing
 
-This repo has no test infrastructure — `package.json` defines no test script and
-there are no test files. Introducing a runner is a decision larger than this
-feature, so it is not bundled in. Verification is manual against `npm run dev`,
-and these checks belong in the implementation plan:
+This repo has no test infrastructure today. Rather than leave the logic
+uncovered or pull in a framework, the three pure functions are extracted into
+`last-added.js`, a module with no Firebase imports and no DOM access, and
+covered with Node's built-in runner (`node --test`). Zero new dependencies.
+
+`app.js` cannot be imported by Node — it imports Firebase over `https://` URLs
+and reads `window.CONFIG` at module load — which is precisely why the testable
+logic moves out of it. This also stops `app.js` growing further past 2500 lines.
+
+`last-added.js` exports:
+
+| Function | Responsibility |
+|---|---|
+| `buildSourceURL(input, extractVideoId)` | Canonical watch URL from a pasted string, or `null`. Takes the extractor as a parameter so the module stays free of `app.js` imports |
+| `formatRelativeTime(timestamp, now)` | Fixed vocabulary below. `now` is injected so tests are deterministic |
+| `pickLastAdded(movies)` | Movie with the greatest `updatedAt`, or `null` for an empty list |
+
+The DOM wiring (`renderLastAdded` and its listeners) stays in `app.js` and is
+verified manually, since it needs a live Firebase connection.
+
+Manual checks against `npm run dev`:
 
 1. Add a movie through the form with a YouTube URL. Panel appears with a working
    source link; the link opens the right video.
