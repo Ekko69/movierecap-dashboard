@@ -1022,6 +1022,7 @@ function openForm(movie = null) {
     movieForm.reset();
     resetMediaInputs();
     editingMovieId = null;
+    clearDuplicateWarningState();
     document.getElementById('form-title').innerText = 'Add New Movie';
 
     // Uncheck all categories
@@ -1093,6 +1094,7 @@ function closeForm() {
         return;
     }
     movieFormPanel.classList.add('hidden');
+    clearDuplicateWarningState();
     videoPreview.pause();
 }
 
@@ -1152,6 +1154,17 @@ function refreshDuplicateWarning() {
 
     duplicateWarning.classList.remove('hidden');
 }
+
+let duplicateCheckTimer = null;
+
+function scheduleDuplicateCheck() {
+    clearTimeout(duplicateCheckTimer);
+    duplicateCheckTimer = setTimeout(refreshDuplicateWarning, 200);
+}
+
+['title', 'year'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('input', scheduleDuplicateCheck);
+});
 
 function resetMediaInputs() {
     currentVideoFile = null;
@@ -1632,6 +1645,10 @@ async function syncMovieData() {
         uploadProgressBar.style.width = '100%';
         document.querySelector('.progress-label').textContent = "Sync Complete!";
 
+        // Title and year are only known now — this is the earliest the banner can fire
+        // on the sync path, and it lands before AI thumbnail generation.
+        refreshDuplicateWarning();
+
         // Auto AI Thumbnail generation (skip if already triggered during download)
         if (isAutoAiThumbnailEnabled() && currentYoutubeThumbnailUrl && !aiThumbnailTriggered) {
             document.querySelector('.progress-label').textContent = "Generating AI Thumbnail...";
@@ -1846,6 +1863,7 @@ onValue(moviesRef, (snapshot) => {
         allMovies.map((movie) => [buildDuplicateKey(movie.title, movie.year), movie])
     );
     applyFiltersAndRender();
+    if (!movieFormPanel.classList.contains('hidden')) refreshDuplicateWarning();
 });
 
 function applyFiltersAndRender() {
