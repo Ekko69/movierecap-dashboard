@@ -410,8 +410,12 @@ function refreshDuplicateWarning() {
 }
 ```
 
-`isSafeThumbnailSrc` already exists at `app.js:123` and is the codebase's existing
-guard against unsafe image sources. Reuse it rather than assigning `src` directly.
+**Corrected during review:** the plan originally said to reuse `isSafeThumbnailSrc`
+here. That was wrong — it is a canvas-taint test that only passes same-origin,
+`blob:` and `data:` sources, and every persisted thumbnail is cross-origin
+(`firebasestorage.googleapis.com`, `i.ytimg.com`), so the banner image would never
+have rendered. The shipped code uses `isDisplayableImageSrc`, a scheme allow-list
+suited to a passive `<img>` sink.
 
 - [ ] **Step 2: Browser verification — render works when called by hand**
 

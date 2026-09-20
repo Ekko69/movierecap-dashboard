@@ -80,6 +80,10 @@ Contents: the existing movie's thumbnail, its title and year, and two actions.
 There is no *Save anyway* action: nothing is blocked, so saving is simply the
 existing Save button.
 
+**Corrected during review:** the banner's thumbnail gate uses `isDisplayableImageSrc`
+(a scheme allow-list), not `isSafeThumbnailSrc` (a same-origin canvas-taint test,
+which rejects every real thumbnail).
+
 Styling is new. There is no alert or banner CSS in style.css to reuse; the
 banner is built on the existing `--color-warning` token (style.css:13) and
 follows the surrounding form styling.
