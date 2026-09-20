@@ -13,7 +13,7 @@ marker for where the previous upload ended, so the next one can start from the
 right place.
 
 A second gap compounds it: the YouTube link a recap came from is never
-persisted. `extractYouTubeVideoId` (app.js:2230) derives a videoId, the import
+persisted. `extractYouTubeVideoId` (app.js:2264) derives a videoId, the import
 pipeline consumes it, and it is discarded at save time. The movie record keeps
 `videoURL` — the Firebase Storage copy of the uploaded file — which says nothing
 about where the recap originated. So even finding the last movie does not tell
@@ -33,7 +33,7 @@ import. See "Follow-on work".
 
 Derived from existing data. No new pointer, no new storage for this.
 
-`updatedAt` is stamped only when a movie is created, never on edit — app.js:1789
+`updatedAt` is stamped only when a movie is created, never on edit — app.js:1818
 makes this deliberate:
 
 ```js
@@ -43,7 +43,7 @@ if (!editingMovieId) {
 ```
 
 Therefore `max(updatedAt)` over `allMovies` *is* the most recently added movie.
-The `onValue` listener at app.js:1882 already holds the full list in memory, so
+The `onValue` listener at app.js:1916 already holds the full list in memory, so
 the panel is a pure render over state that is already there.
 
 Alternatives rejected:
@@ -74,15 +74,15 @@ Written on each add path:
 
 | Path | Value | Location |
 |---|---|---|
-| Single form / auto-run | `#youtube-url` input, normalized | `handleFormSubmit`, app.js:1694 |
+| Single form / auto-run | `#youtube-url` input, normalized | `handleFormSubmit`, app.js:1722 |
 | Bulk YouTube (Excel) | canonical URL built from `item.videoId` | `bulk-youtube.js` sets `item.sourceURL`; `enrichAndSave` writes it |
-| Batch upload (local MP4s) | none — field omitted | `enrichAndSave`, app.js:360 |
+| Batch upload (local MP4s) | none — field omitted | `enrichAndSave`, app.js:373 |
 
 `enrichAndSave` is shared by the batch-upload and bulk-YouTube paths, so it
 reads `item.sourceURL || null` and only the bulk path populates it. That is a
 single-line change covering both.
 
-Normalization goes through the existing `extractYouTubeVideoId` (app.js:2230)
+Normalization goes through the existing `extractYouTubeVideoId` (app.js:2264)
 and rebuilds a canonical `https://www.youtube.com/watch?v=<id>` URL, so a pasted
 link carrying playlist or timestamp parameters is stored clean. A pasted string
 that yields no videoId stores no `sourceURL`.
@@ -121,7 +121,7 @@ Rendered fields: thumbnail, title, year, duration, relative added-time,
 description, source link.
 
 The meta line reads `<year> \u00b7 <duration> \u00b7 added <relative time>`, reusing the
-existing `formatDuration` (app.js:223) for duration. Relative time is rendered
+existing `formatDuration` (app.js:236) for duration. Relative time is rendered
 by a small new helper with a fixed vocabulary: `just now` (< 60s), `N min ago`
 (< 60m), `N hr ago` (< 24h), `N days ago` (< 7d), and the absolute date beyond
 that. It is derived from `updatedAt` at render time, so it refreshes whenever
@@ -129,11 +129,11 @@ the listener refires.
 
 Two deliberate choices:
 
-- **`textContent`, never `innerHTML`.** `createMovieCard` (app.js:1960)
+- **`textContent`, never `innerHTML`.** `createMovieCard` (app.js:1994)
   interpolates movie fields directly into an `innerHTML` template, so
   AI-extracted titles and descriptions land unescaped. The duplicate banner
   already avoids this. The new panel follows the banner, not the card.
-- **Thumbnail passes through `isSafeThumbnailSrc`** (app.js:127), matching
+- **Thumbnail passes through `isSafeThumbnailSrc`** (app.js:130), matching
   every other thumbnail render in the app.
 
 Buttons use `btn btn-sm btn-secondary` and `btn btn-ghost` — both confirmed
@@ -143,7 +143,7 @@ referenced an undefined class; this spec avoids repeating that.)
 ### 4. Data flow
 
 One new function, `renderLastAdded()`, called from the existing `onValue`
-listener at app.js:1882, immediately after `existingMoviesByKey` is rebuilt —
+listener at app.js:1916, immediately after `existingMoviesByKey` is rebuilt —
 the same point at which the duplicate banner already refreshes.
 
 ```
@@ -210,8 +210,8 @@ upload, transcription or OMDb call.
 Today that path only sets `item.wasDuplicate` in `enrichAndSave` (app.js:430),
 by normalized title and year, at the save step — after the entire pipeline has
 run. It is advisory: the row still saves, and the flag surfaces only as a queue
-tag (bulk-youtube.js:208) and a count in the completion toast
-(bulk-youtube.js:411). Matching on videoId up front would turn that into a real
+tag (bulk-youtube.js:210) and a count in the completion toast
+(bulk-youtube.js:415). Matching on videoId up front would turn that into a real
 skip, and would also catch re-imports whose AI-extracted title differs from the
 stored one.
 
