@@ -73,6 +73,9 @@ let existingMoviesByKey = new Map();
 let warnedDuplicateKey = null;
 // Duplicate key the user explicitly dismissed, so the banner stays hidden for it.
 let dismissedDuplicateKey = null;
+// True while handleFormSubmit is awaiting an upload/save. The form panel stays open
+// and interactive throughout, so the banner must not swap the form out from under it.
+let isSavingMovie = false;
 
 
 // DOM Elements
@@ -133,6 +136,16 @@ function isSafeThumbnailSrc(src) {
     } catch (error) {
         return false;
     }
+}
+
+// Whether a stored src is safe to hand to an <img>. Deliberately NOT
+// isSafeThumbnailSrc: that one is a canvas-taint test (same-origin only), and every
+// thumbnail we persist is cross-origin (firebasestorage.googleapis.com, i.ytimg.com),
+// so reusing it here would reject all of them. An <img> src is a passive sink, so a
+// scheme allow-list is the right check — it keeps out javascript: and other actives.
+function isDisplayableImageSrc(src) {
+    if (!src) return false;
+    return /^(https:|blob:|data:image\/(png|jpe?g|gif|webp);)/i.test(src);
 }
 
 const STATUS_LABELS = {
@@ -1107,6 +1120,11 @@ const duplicateWarningDismiss = document.getElementById('duplicate-warning-dismi
 
 // The movie the banner is currently pointing at, so "Open existing" knows its target.
 let duplicateWarningMatch = null;
+let duplicateCheckTimer = null;
+// Set once a save succeeds. The Firebase listener reports the record we just wrote
+// while the form is still open and editingMovieId is still null, so without this the
+// banner flashes "already in your library" at the movie the user just saved.
+let duplicateWarningSuppressed = false;
 
 function hideDuplicateWarning() {
     duplicateWarningMatch = null;
@@ -1114,14 +1132,20 @@ function hideDuplicateWarning() {
 }
 
 function clearDuplicateWarningState() {
+    clearTimeout(duplicateCheckTimer);
     warnedDuplicateKey = null;
     dismissedDuplicateKey = null;
+    duplicateWarningSuppressed = false;
     hideDuplicateWarning();
 }
 
 // Idempotent. Safe to call at any time, including while the form is closed.
 function refreshDuplicateWarning() {
     if (!duplicateWarning) return;
+    if (duplicateWarningSuppressed) {
+        hideDuplicateWarning();
+        return;
+    }
 
     const title = document.getElementById('title').value;
     const year = document.getElementById('year').value;
@@ -1144,7 +1168,7 @@ function refreshDuplicateWarning() {
     duplicateWarningText.textContent =
         `Already in your library: "${match.title}" (${match.year || 'no year'})`;
 
-    if (match.thumbnail && isSafeThumbnailSrc(match.thumbnail)) {
+    if (isDisplayableImageSrc(match.thumbnail)) {
         duplicateWarningThumb.src = match.thumbnail;
         duplicateWarningThumb.classList.remove('hidden');
     } else {
@@ -1154,8 +1178,6 @@ function refreshDuplicateWarning() {
 
     duplicateWarning.classList.remove('hidden');
 }
-
-let duplicateCheckTimer = null;
 
 function scheduleDuplicateCheck() {
     clearTimeout(duplicateCheckTimer);
@@ -1177,6 +1199,12 @@ duplicateWarningDismiss?.addEventListener('click', () => {
 duplicateWarningOpen?.addEventListener('click', () => {
     const match = duplicateWarningMatch;
     if (!match) return;
+    // Swapping the form mid-save would let the in-flight submit finish against a
+    // mutated editingMovieId, writing the new movie through the edit path.
+    if (isSavingMovie) {
+        alert('This movie is still saving. Wait for it to finish before opening another.');
+        return;
+    }
     if (currentVideoFile || uploadedVideoUrl) {
         const proceed = confirm(
             'This discards the video you are working on and opens the existing movie instead. Continue?'
@@ -1717,6 +1745,7 @@ async function handleFormSubmit(e) {
     }
 
     saveBtn.disabled = true;
+    isSavingMovie = true;
     progressContainer.classList.remove('hidden');
 
     try {
@@ -1812,6 +1841,10 @@ async function handleFormSubmit(e) {
         }
 
         uploadProgressBar.style.width = '100%';
+        // The Firebase listener fires after this with the record we just wrote, so
+        // suppress the banner until the form is reopened.
+        clearDuplicateWarningState();
+        duplicateWarningSuppressed = true;
         setTimeout(() => {
             closeForm();
             alert("Movie saved successfully!");
@@ -1822,6 +1855,7 @@ async function handleFormSubmit(e) {
         alert("Error saving movie: " + error.message);
     } finally {
         saveBtn.disabled = false;
+        isSavingMovie = false;
     }
 }
 
