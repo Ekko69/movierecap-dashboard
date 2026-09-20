@@ -7,7 +7,7 @@
 // Canonical watch URL for a YouTube video id, or null when there is no id.
 export function youtubeWatchURL(videoId) {
     if (!videoId) return null;
-    return `https://www.youtube.com/watch?v=${videoId}`;
+    return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
 }
 
 // Canonical watch URL for a pasted string, or null when it holds no video id.
@@ -16,7 +16,6 @@ export function youtubeWatchURL(videoId) {
 export function buildSourceURL(input, extractVideoId) {
     if (!input) return null;
     const trimmed = String(input).trim();
-    if (!trimmed) return null;
     return youtubeWatchURL(extractVideoId(trimmed));
 }
 
@@ -27,7 +26,7 @@ const DAY_MS = 24 * HOUR_MS;
 
 // Human-readable age of a timestamp. `now` is a parameter, not Date.now(), so
 // this stays deterministic under test.
-export function formatRelativeTime(timestamp, now) {
+export function formatRelativeTime(timestamp, now = Date.now()) {
     if (!timestamp) return 'unknown';
 
     const elapsed = now - timestamp;
@@ -48,7 +47,7 @@ export function formatRelativeTime(timestamp, now) {
         return `${days} day${days === 1 ? '' : 's'} ago`;
     }
 
-    return new Date(timestamp).toLocaleDateString('en-US', {
+    return new Date(Number(timestamp)).toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric'
@@ -57,10 +56,11 @@ export function formatRelativeTime(timestamp, now) {
 
 // The most recently added movie. updatedAt is stamped only on creation (never
 // on edit), so the greatest value is genuinely the last one added.
+// Ties keep the earlier element.
 export function pickLastAdded(movies) {
     if (!Array.isArray(movies) || movies.length === 0) return null;
 
     return movies.reduce((best, movie) => (
-        (movie.updatedAt || 0) > (best.updatedAt || 0) ? movie : best
+        (movie?.updatedAt || 0) > (best?.updatedAt || 0) ? movie : best
     ));
 }
