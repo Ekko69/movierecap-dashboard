@@ -1518,3 +1518,47 @@ textarea:focus {
     font-size: 0.78rem;
     color: var(--text-secondary);
 }
+
+/* Duplicate Warning Banner */
+.duplicate-warning {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--color-warning);
+    background: rgba(160, 13, 83, 0.15);
+}
+
+.duplicate-warning-thumb {
+    width: 64px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.duplicate-warning-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.duplicate-warning-label {
+    font-weight: 600;
+    color: var(--color-warning);
+}
+
+.duplicate-warning-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+/* .btn-sm sets flex: 1; these buttons should hug their text instead. */
+.duplicate-warning-actions .btn {
+    flex: 0 0 auto;
+}
