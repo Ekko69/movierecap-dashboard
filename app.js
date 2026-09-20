@@ -430,6 +430,9 @@ async function enrichAndSave(item, onUpdate = updateBatchUI) {
         thumbnail: item.thumbnailURL,
         videoURL: item.videoUrl,
         featuredThumbnail: item.posterUrl || null,
+        // Bulk YouTube rows carry a videoId; batch rows from local files do not,
+        // and Firebase drops null on write, so the key is simply absent for them.
+        sourceURL: item.videoId ? youtubeWatchURL(item.videoId) : null,
         updatedAt: Date.now()
     };
     // Checked before the write so this movie is not compared against itself.
