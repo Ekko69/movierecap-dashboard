@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { youtubeWatchURL, formatRelativeTime, pickLastAdded } from './last-added.js';
+import { youtubeWatchURL, youtubeThumbnailURL, formatRelativeTime, pickLastAdded } from './last-added.js';
 
 test('youtubeWatchURL builds a canonical watch URL', () => {
     assert.equal(
@@ -102,4 +102,31 @@ test('pickLastAdded returns null for a non-array', () => {
 test('pickLastAdded survives a null element', () => {
     const movies = [null, { id: 'real', title: 'Real', updatedAt: 1 }];
     assert.equal(pickLastAdded(movies).id, 'real');
+});
+
+test('youtubeThumbnailURL derives the original frame from a source URL', () => {
+    assert.equal(
+        youtubeThumbnailURL('https://www.youtube.com/watch?v=trjp0T-eW6Q'),
+        'https://i.ytimg.com/vi/trjp0T-eW6Q/mqdefault.jpg'
+    );
+});
+
+test('youtubeThumbnailURL ignores trailing parameters', () => {
+    assert.equal(
+        youtubeThumbnailURL('https://www.youtube.com/watch?v=trjp0T-eW6Q&t=42s'),
+        'https://i.ytimg.com/vi/trjp0T-eW6Q/mqdefault.jpg'
+    );
+});
+
+test('youtubeThumbnailURL returns null when there is no usable source', () => {
+    // Movies added before sourceURL existed, and anything uploaded from disk.
+    assert.equal(youtubeThumbnailURL(null), null);
+    assert.equal(youtubeThumbnailURL(''), null);
+    assert.equal(youtubeThumbnailURL(undefined), null);
+    assert.equal(youtubeThumbnailURL('https://firebasestorage.googleapis.com/x.mp4'), null);
+});
+
+test('youtubeThumbnailURL refuses a non-https source', () => {
+    // The result goes straight into an <img src>, so no javascript:/data: input.
+    assert.equal(youtubeThumbnailURL('javascript:alert(1)//watch?v=trjp0T-eW6Q'), null);
 });

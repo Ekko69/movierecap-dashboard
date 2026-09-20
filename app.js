@@ -19,6 +19,7 @@ import {
 import { initBulkYoutube, isBulkProcessing, resetBulkYoutube } from './bulk-youtube.js';
 import {
     youtubeWatchURL,
+    youtubeThumbnailURL,
     formatRelativeTime,
     pickLastAdded
 } from './last-added.js';
@@ -1931,12 +1932,30 @@ function renderLastAdded() {
 
     const movie = lastAddedMovie;
 
+    // Prefer the video's original frame on YouTube over movie.thumbnail, which by
+    // this point is usually the AI-generated or watermarked artwork. The panel is
+    // a "where did I leave off" marker, so the frame that matches what you see on
+    // YouTube identifies the recap faster than the stylised version does.
+    //
     // isDisplayableImageSrc, not isSafeThumbnailSrc: the latter is a canvas-taint
     // test that only passes same-origin URLs, and every stored thumbnail is
     // cross-origin. See the comment above both functions.
-    lastAddedThumb.src = isDisplayableImageSrc(movie.thumbnail)
+    const storedThumb = isDisplayableImageSrc(movie.thumbnail)
         ? movie.thumbnail
         : 'assets/img/app-icon.png';
+    const originalThumb = youtubeThumbnailURL(movie.sourceURL);
+
+    // A deleted or private video still has a sourceURL but no image, so fall back
+    // once rather than leaving a broken frame. Cleared first so a failure on one
+    // movie cannot fire against the next one rendered.
+    lastAddedThumb.onerror = null;
+    if (originalThumb) {
+        lastAddedThumb.onerror = () => {
+            lastAddedThumb.onerror = null;
+            lastAddedThumb.src = storedThumb;
+        };
+    }
+    lastAddedThumb.src = originalThumb || storedThumb;
     lastAddedThumb.alt = movie.title || '';
 
     lastAddedTitle.textContent = movie.title || 'Untitled';

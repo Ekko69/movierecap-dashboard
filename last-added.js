@@ -10,6 +10,23 @@ export function youtubeWatchURL(videoId) {
     return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
 }
 
+// The video's own thumbnail on YouTube, derived from a stored sourceURL.
+//
+// mqdefault rather than maxresdefault: maxres is absent for a great many videos
+// and would 404 into a broken image, while mqdefault always exists and is
+// natively 16:9 (hqdefault is 4:3 and arrives letterboxed). At 320x180 it is
+// ample for the panel's 120x68 slot, even on a 2x display.
+//
+// Anchored to https so the result is safe to hand straight to an <img src>.
+export function youtubeThumbnailURL(sourceURL) {
+    if (!sourceURL) return null;
+    const match = String(sourceURL).match(
+        /^https:\/\/(?:www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/
+    );
+    if (!match) return null;
+    return `https://i.ytimg.com/vi/${match[1]}/mqdefault.jpg`;
+}
+
 const SECOND_MS = 1000;
 const MINUTE_MS = 60 * SECOND_MS;
 const HOUR_MS = 60 * MINUTE_MS;

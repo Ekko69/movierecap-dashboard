@@ -142,7 +142,16 @@ Two deliberate choices:
   interpolates movie fields directly into an `innerHTML` template, so
   AI-extracted titles and descriptions land unescaped. The duplicate banner
   already avoids this. The new panel follows the banner, not the card.
-- **Thumbnail passes through `isDisplayableImageSrc`** (app.js:145) — the
+- **The thumbnail is the video's original frame on YouTube**, derived from
+  `sourceURL` rather than read from `movie.thumbnail` — which by then is usually
+  the AI-generated or watermarked artwork. The panel is a "where did I leave
+  off" marker, so the frame matching what you see on YouTube identifies the
+  recap faster. `mqdefault` is used, not `maxresdefault`: maxres is missing for
+  many videos and would 404 into a broken image, while mqdefault always exists,
+  is natively 16:9, and at 320x180 is ample for a 120x68 slot (~21KB against
+  ~234KB). A deleted or private video falls back once, via `onerror`, to the
+  stored thumbnail. Movies with no `sourceURL` use the stored thumbnail directly.
+- **The stored-thumbnail fallback passes through `isDisplayableImageSrc`** (app.js:145) — the
   scheme allow-list, *not* `isSafeThumbnailSrc` (app.js:130). The latter is a
   canvas-taint test that only accepts same-origin URLs; every persisted
   thumbnail is cross-origin (firebasestorage.googleapis.com, i.ytimg.com), so
@@ -208,6 +217,7 @@ logic moves out of it. This also stops `app.js` growing further past 2500 lines.
 | Function | Responsibility |
 |---|---|
 | `youtubeWatchURL(videoId)` | Canonical watch URL for a video id, or `null` |
+| `youtubeThumbnailURL(sourceURL)` | The video's own frame on YouTube, derived from a stored `sourceURL`, or `null` |
 | `formatRelativeTime(timestamp, now)` | Fixed vocabulary below. `now` is injected so tests are deterministic |
 | `pickLastAdded(movies)` | Movie with the greatest `updatedAt`, or `null` for an empty list |
 
