@@ -239,7 +239,7 @@ with:
                                                 <span class="duplicate-warning-label">⚠ Possible duplicate</span>
                                                 <span id="duplicate-warning-text"></span>
                                                 <div class="duplicate-warning-actions">
-                                                    <button type="button" id="duplicate-warning-open" class="btn btn-sm btn-warning">Open existing</button>
+                                                    <button type="button" id="duplicate-warning-open" class="btn btn-sm btn-secondary">Open existing</button>
                                                     <button type="button" id="duplicate-warning-dismiss" class="btn btn-sm">Dismiss</button>
                                                 </div>
                                             </div>
@@ -825,6 +825,20 @@ appears under ⭐ Top Picks and **not** under 🆕 New.
 git add app.js
 git commit -m "fix: stop re-tagging edited movies as New when all categories are cleared"
 ```
+
+---
+
+## Incidental finding — `.btn-warning` is a dead class
+
+`index.html:80` (the **⚡ Sync Movie Data** button) uses `class="btn btn-warning btn-sm"`,
+but `.btn-warning` is **not defined anywhere in style.css**. That button therefore
+renders with bare `.btn` styling rather than the warning colour it was presumably
+meant to have. The warning-coloured variant that actually exists is `.btn-danger`
+(`style.css:220-224`, which uses `--color-warning`).
+
+This plan does not fix it: defining `.btn-warning` would silently change the Sync
+button's appearance, which is outside this work. The banner's "Open existing" button
+uses `.btn-secondary` instead, which is defined.
 
 ---
 
