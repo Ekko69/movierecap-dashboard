@@ -1096,6 +1096,63 @@ function closeForm() {
     videoPreview.pause();
 }
 
+// --- Duplicate Warning Banner ---
+const duplicateWarning = document.getElementById('duplicate-warning');
+const duplicateWarningThumb = document.getElementById('duplicate-warning-thumb');
+const duplicateWarningText = document.getElementById('duplicate-warning-text');
+const duplicateWarningOpen = document.getElementById('duplicate-warning-open');
+const duplicateWarningDismiss = document.getElementById('duplicate-warning-dismiss');
+
+// The movie the banner is currently pointing at, so "Open existing" knows its target.
+let duplicateWarningMatch = null;
+
+function hideDuplicateWarning() {
+    duplicateWarningMatch = null;
+    duplicateWarning?.classList.add('hidden');
+}
+
+function clearDuplicateWarningState() {
+    warnedDuplicateKey = null;
+    dismissedDuplicateKey = null;
+    hideDuplicateWarning();
+}
+
+// Idempotent. Safe to call at any time, including while the form is closed.
+function refreshDuplicateWarning() {
+    if (!duplicateWarning) return;
+
+    const title = document.getElementById('title').value;
+    const year = document.getElementById('year').value;
+    const match = findDuplicateMovie(title, year);
+
+    if (!match) {
+        hideDuplicateWarning();
+        return;
+    }
+
+    const key = buildDuplicateKey(title, year);
+    if (key === dismissedDuplicateKey) {
+        hideDuplicateWarning();
+        return;
+    }
+
+    duplicateWarningMatch = match;
+    warnedDuplicateKey = key;
+
+    duplicateWarningText.textContent =
+        `Already in your library: "${match.title}" (${match.year || 'no year'})`;
+
+    if (match.thumbnail && isSafeThumbnailSrc(match.thumbnail)) {
+        duplicateWarningThumb.src = match.thumbnail;
+        duplicateWarningThumb.classList.remove('hidden');
+    } else {
+        duplicateWarningThumb.removeAttribute('src');
+        duplicateWarningThumb.classList.add('hidden');
+    }
+
+    duplicateWarning.classList.remove('hidden');
+}
+
 function resetMediaInputs() {
     currentVideoFile = null;
     currentThumbnailBlob = null;
