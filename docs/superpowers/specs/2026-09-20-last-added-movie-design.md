@@ -74,7 +74,7 @@ Written on each add path:
 
 | Path | Value | Location |
 |---|---|---|
-| Single form / auto-run | `#youtube-url` input, normalized | `handleFormSubmit`, app.js:1722 |
+| Single form / auto-run | captured when the YouTube download completes | `downloadYouTubeVideo` sets `currentSourceURL`; `handleFormSubmit` writes it |
 | Bulk YouTube (Excel) | canonical URL built from `item.videoId` | `bulk-youtube.js` sets `item.sourceURL`; `enrichAndSave` writes it |
 | Batch upload (local MP4s) | none — field omitted | `enrichAndSave`, app.js:373 |
 
@@ -84,8 +84,15 @@ single-line change covering both.
 
 Normalization goes through the existing `extractYouTubeVideoId` (app.js:2264)
 and rebuilds a canonical `https://www.youtube.com/watch?v=<id>` URL, so a pasted
-link carrying playlist or timestamp parameters is stored clean. A pasted string
-that yields no videoId stores no `sourceURL`.
+link carrying playlist or timestamp parameters is stored clean.
+
+The value is captured at **download** time into a module-level `currentSourceURL`,
+not read from `#youtube-url` at save time. Reading the input at save time is
+wrong: `setSourceMode` only toggles panel visibility, so a user who pastes a URL,
+changes their mind, switches to the Upload File tab and saves a local MP4 would
+stamp an unrelated source onto that movie. `currentSourceURL` is cleared by
+`handleVideoSelect` (so any video chosen from disk has no source) and re-set
+immediately after it on the download path, and cleared by `resetMediaInputs`.
 
 **Existing movies cannot be backfilled** — the source link was never recorded
 and is not recoverable. The panel treats a missing `sourceURL` as a normal
@@ -200,7 +207,7 @@ logic moves out of it. This also stops `app.js` growing further past 2500 lines.
 
 | Function | Responsibility |
 |---|---|
-| `buildSourceURL(input, extractVideoId)` | Canonical watch URL from a pasted string, or `null`. Takes the extractor as a parameter so the module stays free of `app.js` imports |
+| `youtubeWatchURL(videoId)` | Canonical watch URL for a video id, or `null` |
 | `formatRelativeTime(timestamp, now)` | Fixed vocabulary below. `now` is injected so tests are deterministic |
 | `pickLastAdded(movies)` | Movie with the greatest `updatedAt`, or `null` for an empty list |
 
@@ -240,3 +247,14 @@ stored one.
 
 This needs its own spec. It is worthless until `sourceURL` exists on a
 meaningful number of records.
+
+## Incidental fix
+
+`#toast` carried a permanent `hidden` class while `.hidden` is
+`display: none !important`, and nothing ever removed it. `showToast` only
+toggles `.show`, which changes opacity — so **every toast in the app was
+invisible**, including the pre-existing bulk-import completion messages. This
+was pre-existing, but the panel's Copy link button has no other feedback (a
+clipboard write is invisible by definition), so the class was dropped from
+`index.html`. `.toast` already ships `opacity: 0; pointer-events: none`, so the
+toast still stays hidden until `showToast` adds `.show`.
