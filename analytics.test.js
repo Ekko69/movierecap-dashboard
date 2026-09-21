@@ -49,6 +49,7 @@ test('commentsInRange counts per movie inside the range only', () => {
 test('formatCompact is exact below ten thousand and compact above', () => {
     assert.equal(formatCompact(0), '0');
     assert.equal(formatCompact(1284), '1,284');
+    assert.equal(formatCompact(1284.4), '1,284');
     assert.equal(formatCompact(9999), '9,999');
     assert.equal(formatCompact(12900), '12.9K');
     assert.equal(formatCompact(4200000), '4.2M');
@@ -75,6 +76,8 @@ test('formatDuration reads as seconds, minutes or hours', () => {
     assert.equal(formatDuration(0), '0s');
     assert.equal(formatDuration(-5), '0s');
     assert.equal(formatDuration(undefined), '0s');
+    assert.equal(formatDuration(Infinity), '0s');
+    assert.equal(formatDuration(NaN), '0s');
 });
 
 const LIBRARY = [
@@ -189,4 +192,35 @@ test('buildMovieRows survives empty input', () => {
     assert.deepEqual(buildMovieRows({ key: 'title', clicks: null, plays: {}, completes: {} }, []),
         { rows: [], neverPlayed: [], notInLibrary: [] });
     assert.deepEqual(buildMovieRows(null, null).rows, []);
+});
+
+test('buildMovieRows matches titles regardless of case', () => {
+    // Fixing a title's capitalization in the dashboard must not split its history.
+    const { rows, notInLibrary } = buildMovieRows({
+        key: 'title', clicks: null, plays: { 'terra nova': 5, 'TERRA NOVA': 2 }, completes: {}
+    }, LIBRARY);
+    assert.deepEqual(rows.map((row) => [row.title, row.plays]), [['Terra Nova', 7]]);
+    assert.deepEqual(notInLibrary, []);
+});
+
+test('buildMovieRows matches ids exactly, case included', () => {
+    const { rows, notInLibrary } = buildMovieRows({ key: 'id', clicks: null, plays: { M1: 3 }, completes: {} }, LIBRARY);
+    assert.deepEqual(rows, []);
+    assert.deepEqual(notInLibrary, [{ key: 'M1', plays: 3, clicks: null }]);
+});
+
+test('buildMovieRows keeps a title GA reports only completions for', () => {
+    // GA can keep a video_complete row whose video_start was withheld.
+    const { rows, notInLibrary } = buildMovieRows({
+        key: 'title', clicks: null, plays: {}, completes: { 'Luck Key': 3, 'Gone Title': 2 }
+    }, LIBRARY);
+    assert.deepEqual(rows.map((row) => [row.title, row.completes, row.completionRate]), [['Luck Key', 3, null]]);
+    assert.deepEqual(notInLibrary, [{ key: 'Gone Title', plays: 0, clicks: null }]);
+});
+
+test("buildMovieRows names a missing title by GA's own spelling", () => {
+    const { notInLibrary } = buildMovieRows({
+        key: 'title', clicks: null, plays: { '  Old Name ': 2, 'old name': 1 }, completes: {}
+    }, LIBRARY);
+    assert.deepEqual(notInLibrary, [{ key: 'Old Name', plays: 3, clicks: null }]);
 });

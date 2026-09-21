@@ -10,8 +10,10 @@ export function normalizeTitle(title) {
     return String(title ?? '').trim();
 }
 
-// The span a range covers, matching GA's "{N}daysAgo" to "yesterday": from
-// local midnight N days ago up to local midnight today.
+// The span a range covers, approximating GA's "{N}daysAgo" to "yesterday":
+// from local midnight N days ago up to local midnight today. GA counts days in
+// the property's timezone and this in the browser's, so the edges can differ by
+// some hours — harmless for its one use, counting comments in the range.
 export function rangeBounds(days, now = Date.now()) {
     const end = new Date(now);
     end.setHours(0, 0, 0, 0);
@@ -52,7 +54,9 @@ export function formatPercent(ratio) {
 
 // Engagement time: "45s", "2m 14s", "1h 3m".
 export function formatDuration(seconds) {
-    const total = Math.max(0, Math.round(Number(seconds) || 0));
+    const value = Number(seconds);
+    // Non-finite input reads as zero rather than "Infinityh NaNm".
+    const total = Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
     const hours = Math.floor(total / 3600);
     const minutes = Math.floor((total % 3600) / 60);
     const secs = total % 60;
@@ -61,14 +65,20 @@ export function formatDuration(seconds) {
     return `${secs}s`;
 }
 
-// GA's counts for one event, summed into normalized keys. The same title may
-// arrive with and without stray spaces, and "(not set)" names nothing.
-function normalizeCounts(counts, key) {
+// What titles are matched by: surrounding spaces ignored, and case too, so
+// fixing a title's capitalization does not split its history. Ids are matched
+// exactly — Firebase ids are case-sensitive.
+const matchKey = (value, key) => (key === 'title' ? normalizeTitle(value).toLowerCase() : String(value ?? ''));
+
+// GA's counts for one event, summed by match key; "(not set)" names nothing.
+// Each key keeps the first spelling seen, to name titles the library lacks.
+function normalizeCounts(counts, key, spellings) {
     const out = new Map();
     for (const [raw, value] of Object.entries(counts || {})) {
-        const name = key === 'title' ? normalizeTitle(raw) : String(raw);
+        const name = matchKey(raw, key);
         if (!name || name === '(not set)') continue;
         out.set(name, (out.get(name) || 0) + (Number(value) || 0));
+        if (!spellings.has(name)) spellings.set(name, key === 'title' ? normalizeTitle(raw) : String(raw));
     }
     return out;
 }
@@ -83,19 +93,19 @@ const byName = (a, b) => a.localeCompare(b);
 // copies there are, rather than inventing a split.
 export function buildMovieRows(movies, library, commentCounts = new Map()) {
     const key = movies?.key === 'id' ? 'id' : 'title';
-    const keyOf = (movie) => (key === 'title' ? normalizeTitle(movie?.title) : String(movie?.id ?? ''));
 
     const groups = new Map();
     for (const movie of library || []) {
-        const name = keyOf(movie);
+        const name = matchKey(key === 'title' ? movie?.title : movie?.id, key);
         if (!name) continue;
         if (!groups.has(name)) groups.set(name, []);
         groups.get(name).push(movie);
     }
 
-    const clicks = movies?.clicks ? normalizeCounts(movies.clicks, key) : null;
-    const plays = normalizeCounts(movies?.plays, key);
-    const completes = normalizeCounts(movies?.completes, key);
+    const spellings = new Map();
+    const clicks = movies?.clicks ? normalizeCounts(movies.clicks, key, spellings) : null;
+    const plays = normalizeCounts(movies?.plays, key, spellings);
+    const completes = normalizeCounts(movies?.completes, key, spellings);
 
     const rows = [];
     const neverPlayed = [];
@@ -103,9 +113,10 @@ export function buildMovieRows(movies, library, commentCounts = new Map()) {
         const playCount = plays.get(name) || 0;
         const completeCount = completes.get(name) || 0;
         const clickCount = clicks ? (clicks.get(name) || 0) : null;
+        const title = normalizeTitle(copies[0].title) || name;
         const row = {
-            key: name,
-            title: normalizeTitle(copies[0].title) || name,
+            key: key === 'title' ? title : name,
+            title,
             thumbnail: copies.find((movie) => movie.thumbnail)?.thumbnail || null,
             copies: copies.length,
             clicks: clickCount,
@@ -114,8 +125,11 @@ export function buildMovieRows(movies, library, commentCounts = new Map()) {
             completionRate: playCount > 0 ? completeCount / playCount : null,
             comments: copies.reduce((sum, movie) => sum + (commentCounts.get(movie.id) || 0), 0)
         };
-        // Clicked but never played still earns a row: that gap is worth seeing.
-        if (playCount > 0 || clickCount > 0) rows.push(row);
+        // Any activity earns a row: a click without a play is a gap worth
+        // seeing, and a completion GA kept without its start still counts.
+        if (playCount > 0 || clickCount > 0 || completeCount > 0) rows.push(row);
+        // Every title nobody played, including ones clicked but not played —
+        // those appear in the table too, where their clicks show the gap.
         if (playCount === 0) neverPlayed.push(row);
     }
 
@@ -123,10 +137,10 @@ export function buildMovieRows(movies, library, commentCounts = new Map()) {
     neverPlayed.sort((a, b) => byName(a.title, b.title));
 
     // Titles GA has that the library does not: renamed or removed movies.
-    const reported = new Set([...plays.keys(), ...(clicks ? clicks.keys() : [])]);
+    const reported = new Set([...plays.keys(), ...completes.keys(), ...(clicks ? clicks.keys() : [])]);
     const notInLibrary = [...reported]
         .filter((name) => !groups.has(name))
-        .map((name) => ({ key: name, plays: plays.get(name) || 0, clicks: clicks ? (clicks.get(name) || 0) : null }))
+        .map((name) => ({ key: spellings.get(name), plays: plays.get(name) || 0, clicks: clicks ? (clicks.get(name) || 0) : null }))
         .sort((a, b) => (b.plays - a.plays) || ((b.clicks || 0) - (a.clicks || 0)) || byName(a.key, b.key));
 
     return { rows, neverPlayed, notInLibrary };
