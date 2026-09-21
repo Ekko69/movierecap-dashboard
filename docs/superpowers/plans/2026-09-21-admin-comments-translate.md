@@ -98,6 +98,25 @@ test('detectScript distinguishes an unrecognized script from latin', () => {
     assert.equal(detectScript('ქართული'), 'unknown');    // Georgian
 });
 
+test('detectScript handles Latin scripts beyond the basic range', () => {
+    // Vietnamese and Yoruba stack diacritics into Latin Extended Additional.
+    // A hand-rolled A-Z range reported these as an unrecognized script.
+    assert.equal(detectScript('ạệộ'), 'latin');
+    assert.equal(detectScript('ẹọṣ'), 'latin');
+    assert.equal(detectScript('không có gì'), 'latin');
+});
+
+test('detectScript covers the extended blocks of listed scripts', () => {
+    assert.equal(detectScript('ὶ'), 'greek');        // Greek Extended, polytonic
+    assert.equal(detectScript('\u0870'), 'arabic');  // Arabic Extended-B
+});
+
+test('detectScript treats mathematical symbols as no language', () => {
+    // × and ÷ sit inside the Latin-1 range but are symbols, not letters.
+    assert.equal(detectScript('5×3'), 'empty');
+    assert.equal(detectScript('÷'), 'empty');
+});
+
 test('detectScript reports empty when there is no language present', () => {
     assert.equal(detectScript(''), 'empty');
     assert.equal(detectScript(null), 'empty');
@@ -177,21 +196,26 @@ export function needsTranslation(text) {
 // a translation target and answer a Persian speaker in Arabic. The real
 // language is whatever the model detects and stores.
 //
+// Unicode script properties rather than hand-written codepoint ranges: a
+// literal range has to be kept in step with every extended block, and getting
+// it wrong is silent. \p{Script=Latin} already knows that Vietnamese's ệ and
+// Yoruba's ṣ are Latin, that ὶ is Greek, and that × and ÷ are neither.
+//
 // Kana precedes han because Japanese mixes the two and han alone would report
 // Japanese as han. Latin comes last so mixed text reports the script that
 // actually needs translating.
-const SCRIPT_RANGES = [
-    ['myanmar', /[\u1000-\u109F\uA9E0-\uA9FF\uAA60-\uAA7F]/],   // incl. Extended-A/B
-    ['arabic', /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/],    // incl. Supplement, Extended-A
-    ['thai', /[\u0E00-\u0E7F]/],
-    ['kana', /[\u3040-\u30FF]/],
-    ['hangul', /[\uAC00-\uD7A3]/],
-    ['han', /[\u4E00-\u9FFF]/],
-    ['devanagari', /[\u0900-\u097F]/],
-    ['cyrillic', /[\u0400-\u04FF]/],
-    ['greek', /[\u0370-\u03FF]/],
-    ['hebrew', /[\u0590-\u05FF]/],
-    ['latin', /[A-Za-z\u00C0-\u024F]/]
+const SCRIPT_PATTERNS = [
+    ['myanmar', /\p{Script=Myanmar}/u],
+    ['arabic', /\p{Script=Arabic}/u],
+    ['thai', /\p{Script=Thai}/u],
+    ['kana', /\p{Script=Hiragana}|\p{Script=Katakana}/u],
+    ['hangul', /\p{Script=Hangul}/u],
+    ['han', /\p{Script=Han}/u],
+    ['devanagari', /\p{Script=Devanagari}/u],
+    ['cyrillic', /\p{Script=Cyrillic}/u],
+    ['greek', /\p{Script=Greek}/u],
+    ['hebrew', /\p{Script=Hebrew}/u],
+    ['latin', /\p{Script=Latin}/u]
 ];
 
 // The writing system a comment uses. This drives a UI hint and nothing else.
@@ -203,7 +227,7 @@ export function detectScript(text) {
     const value = String(text ?? '');
     if (!value) return 'empty';
 
-    for (const [script, pattern] of SCRIPT_RANGES) {
+    for (const [script, pattern] of SCRIPT_PATTERNS) {
         if (pattern.test(value)) return script;
     }
 
@@ -214,7 +238,7 @@ export function detectScript(text) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test`
-Expected: PASS — all 11 new tests pass, existing `last-added.test.js` tests still pass.
+Expected: PASS — all 14 new tests pass, existing `last-added.test.js` tests still pass.
 
 - [ ] **Step 5: Commit**
 
