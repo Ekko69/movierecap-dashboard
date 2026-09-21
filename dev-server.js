@@ -118,5 +118,5 @@ const server = createServer(async (req, rawRes) => {
 
 server.listen(PORT, () => {
     console.log(`Dev server → http://localhost:${PORT}`);
-    console.log('API routes: /api/youtube-info  /api/youtube-download  /api/ai-service  /api/generate-thumbnail  /api/translate');
+    console.log('API routes: /api/youtube-info  /api/youtube-download  /api/ai-service  /api/generate-thumbnail  /api/translate  /api/analytics');
 });
