@@ -1243,11 +1243,79 @@ duplicateWarningOpen?.addEventListener('click', () => {
     openForm(match);
 });
 
+// --- Pre-flight duplicate warning (YouTube URL) ---
+// Separate from the title/year banner above on purpose: refreshDuplicateWarning
+// hides that one whenever title/year stop matching and re-runs on every Firebase
+// update, which would wipe a URL-triggered warning.
+const sourceDuplicateWarning = document.getElementById('source-duplicate-warning');
+const sourceDuplicateThumb = document.getElementById('source-duplicate-thumb');
+const sourceDuplicateText = document.getElementById('source-duplicate-text');
+const sourceDuplicateOpen = document.getElementById('source-duplicate-open');
+const sourceDuplicateOverride = document.getElementById('source-duplicate-override');
+
+// The movie the banner points at, so "Open existing" knows its target.
+let sourceDuplicateMatch = null;
+// One video id the user chose to import anyway. A single slot, not a set: the
+// form handles one video at a time, so overriding a second replaces the first
+// and the exemption can never accumulate.
+let overriddenVideoId = null;
+
+function hideSourceDuplicateWarning() {
+    sourceDuplicateMatch = null;
+    sourceDuplicateWarning?.classList.add('hidden');
+}
+
+// True when this video is already in the library and the user has not overridden
+// it — in which case the caller must not fetch, download or import.
+// Showing the banner is this function's job, so every caller behaves the same.
+function blockedAsDuplicate(videoId) {
+    if (!videoId || videoId === overriddenVideoId) {
+        hideSourceDuplicateWarning();
+        return false;
+    }
+
+    const match = findMovieByVideoId(videoId);
+    if (!match) {
+        hideSourceDuplicateWarning();
+        return false;
+    }
+
+    sourceDuplicateMatch = match;
+    sourceDuplicateText.textContent =
+        `"${match.title}" (${match.year || 'no year'}) — added ${formatRelativeTime(match.updatedAt, Date.now())}`;
+
+    const thumb = youtubeThumbnailURL(match.sourceURL);
+    if (thumb) {
+        sourceDuplicateThumb.src = thumb;
+        sourceDuplicateThumb.classList.remove('hidden');
+    } else {
+        sourceDuplicateThumb.removeAttribute('src');
+        sourceDuplicateThumb.classList.add('hidden');
+    }
+
+    sourceDuplicateWarning.classList.remove('hidden');
+    return true;
+}
+
+sourceDuplicateOpen?.addEventListener('click', () => {
+    if (sourceDuplicateMatch) openForm(sourceDuplicateMatch);
+});
+
+sourceDuplicateOverride?.addEventListener('click', () => {
+    const videoId = extractYouTubeVideoId(
+        document.getElementById('youtube-url')?.value?.trim() || ''
+    );
+    if (videoId) overriddenVideoId = videoId;
+    hideSourceDuplicateWarning();
+});
+
 function resetMediaInputs() {
     currentVideoFile = null;
     currentThumbnailBlob = null;
     currentYoutubeThumbnailUrl = null;
     currentSourceURL = null;
+    overriddenVideoId = null;
+    hideSourceDuplicateWarning();
     currentSubtitleFile = null;
     aiThumbnailGenerating = false;
     aiThumbnailTriggered = false;
@@ -2588,6 +2656,7 @@ document.getElementById('fetch-youtube-btn')?.addEventListener('click', () => {
         alert('Please enter a valid YouTube URL.');
         return;
     }
+    if (blockedAsDuplicate(videoId)) return;
     fetchYouTubeInfo(videoId);
 });
 
@@ -2595,6 +2664,7 @@ document.getElementById('download-youtube-btn')?.addEventListener('click', () =>
     const url = document.getElementById('youtube-url').value.trim();
     const videoId = extractYouTubeVideoId(url);
     if (!videoId) return;
+    if (blockedAsDuplicate(videoId)) return;
     const quality = document.getElementById('youtube-quality')?.value || '360p';
     downloadYouTubeVideo(videoId, quality);
 });
@@ -2654,6 +2724,9 @@ document.getElementById('youtube-url')?.addEventListener('input', () => {
         const url = document.getElementById('youtube-url').value.trim();
         const videoId = extractYouTubeVideoId(url);
         if (!videoId) return;
+        // Auto-run is the most expensive path and needs no click, so silently
+        // starting it on a video already in the library is the worst case.
+        if (blockedAsDuplicate(videoId)) return;
         const quality = document.getElementById('youtube-quality')?.value || '360p';
         runAutoPipeline(videoId, quality);
     }, 700);
