@@ -48,9 +48,18 @@ GA4 also records its automatic events (first open, sessions, engagement) with co
 language, OS version and app version, which is where the audience figures come from.
 
 **Custom parameters are only reportable once registered.** The Data API can break data down by
-`movie_id`, `item_id` or `category_name` only after each is registered as an event-scoped custom
-dimension in GA4, and registration is not retroactive: breakdowns exist from the day it is done.
-Audience and device figures are built in and cover the full history regardless.
+a parameter only after it is registered as an event-scoped custom dimension in GA4, and
+registration is not retroactive: breakdowns exist from the day it is done. Audience and device
+figures are built in and cover the full history regardless.
+
+**The titles are already registered** (`movie_title` and/or `item_name`), so they carry history;
+the ids are not. Movies are therefore matched to the library **by title**. The endpoint still
+checks at runtime which dimensions exist, and falls back to ids only where no title dimension is
+registered.
+
+**35 titles appear twice in the library** (70 movies), and 8 titles carry stray leading or
+trailing spaces, as of 2026-09-21. GA records only the title, so for a shared title it holds one
+combined figure for both copies and cannot say which was watched.
 
 ## Design
 
@@ -63,22 +72,27 @@ would make every trend end in a false dip.
 | Section | Contents | Source |
 |---|---|---|
 | **Audience** | Tiles: active users, new users, sessions, average engagement per active user. A daily active users trend chart. | Built in |
-| **Movie performance** | A table ranked by plays: thumbnail and title, clicks, plays, completions, completion rate, comments in the range. Then "No plays in this period: N movies", expandable to the list. | `item_id`, `movie_id`; comments from the database |
+| **Movie performance** | A table of titles ranked by plays: thumbnail and title, clicks, plays, completions, completion rate, comments in the range. Then "No plays in this period: N titles", expandable to the list. | `item_name`, `movie_title` (or the ids); comments from the database |
 | **Categories** | Categories ranked by views, as bars. | `category_name` |
 | **Where & devices** | Four ranked lists: countries, languages, Android versions, app versions. Top 10 each, by active users. | Built in |
 
 In the movie table:
 
-- **Completion rate** is completions ÷ plays, shown as "—" when a movie has no plays.
-- **Clicks** needs `item_id` registered, and **plays and completions** need `movie_id`. With only
-  `movie_id`, the table still ranks by plays and the Clicks column shows "—". With only `item_id`,
-  there is nothing to rank by, so the table is not shown.
-- **No plays in this period** lists every library movie with zero plays in the range, including
+- **One row per title.** A title held by two library movies gets one row, the first copy's
+  thumbnail, a **"2 copies"** badge, and the combined figures GA recorded for it. Splitting them
+  between the copies would be invented.
+- **Titles are matched with surrounding spaces ignored**, on both sides.
+- **Completion rate** is completions ÷ plays, shown as "—" when a title has no plays.
+- **Plays and completions** need `movie_title` (or `movie_id`) registered; **clicks** need
+  `item_name` (or `item_id`). With only the first, the table still ranks by plays and the Clicks
+  column shows "—". Without the first there is nothing to rank by, so the table is not shown.
+- **No plays in this period** lists every library title with zero plays in the range, including
   ones added during it.
-- **Movies since removed from the library** still have GA history. Their plays are summed into one
-  line under the table rather than shown as rows with no title or thumbnail.
-- **Comments** counts top-level comments whose timestamp falls in the range, from the comments tree
-  the Comments section already keeps loaded. It needs no GA setup and covers the full history.
+- **Titles in GA but not in the library** — renamed or removed movies — are listed under the table
+  by name with their plays, labelled "renamed or removed".
+- **Comments** counts top-level comments in the range whose movie has the row's title, from the
+  comments tree the Comments section already keeps loaded. It needs no GA setup and covers the
+  full history.
 
 Charts are inline SVG and CSS bars. The project has no build step and two runtime
 dependencies, and one line chart and some ranked bars do not justify a charting library.
@@ -93,7 +107,7 @@ section is used.
 Browser ──GET /api/analytics?range=28──▶ api/analytics.js ──▶ GA4 Data API
    │                                      (service account,     (getMetadata,
    │                                       read-only scope)      batchRunReports)
-   └── analytics.js joins GA movie ids ⟷ library: titles, thumbnails, never played
+   └── analytics.js joins GA titles ⟷ library: thumbnails, shared titles, never played
 ```
 
 **`api/analytics.js`** — the endpoint. `GET` with `range` of 7, 28 or 90.
@@ -116,8 +130,8 @@ Browser ──GET /api/analytics?range=28──▶ api/analytics.js ──▶ GA
 objects. Pure, so unit-tested. The leading underscore keeps Vercel from deploying it as an
 endpoint, the same convention as `api/_ytdlp.js`.
 
-**`analytics.js`** (root) — the browser-side pure logic: joining GA movie ids to the library,
-completion rates, the never-played list, comments in range. It imports nothing and is
+**`analytics.js`** (root) — the browser-side pure logic: joining GA's titles (or ids) to the
+library, shared titles, completion rates, the never-played list, comments in range. It imports nothing and is
 unit-tested, following `comments.js`.
 
 **View routing** — the router from the Comments feature assumes two views: one
@@ -139,8 +153,8 @@ All use the date range `{startDate: '{N}daysAgo', endDate: 'yesterday'}`.
 | 4 | Languages | `language` | `activeUsers` | top 10 |
 | 5 | Android versions | `operatingSystemVersion` | `activeUsers` | top 10 |
 | 6 | App versions | `appVersion` | `activeUsers` | top 10 |
-| 7 | Movie clicks | `customEvent:item_id` | `eventCount` | `eventName` = `select_content`; all rows |
-| 8 | Plays and completions | `eventName`, `customEvent:movie_id` | `eventCount` | `eventName` in `video_start`, `video_complete`; all rows |
+| 7 | Movie clicks | `customEvent:item_name`, else `customEvent:item_id` | `eventCount` | `eventName` = `select_content`; all rows |
+| 8 | Plays and completions | `eventName`, `customEvent:movie_title`, else `customEvent:movie_id` | `eventCount` | `eventName` in `video_start`, `video_complete`; all rows |
 | 9 | Categories | `customEvent:category_name` | `eventCount` | `eventName` = `view_category`; all rows |
 
 "All rows" means no `limit`: GA's default is 10,000 rows, against 468 movies and about a dozen
@@ -161,17 +175,21 @@ Average engagement per active user is `userEngagementDuration / activeUsers`, in
     "daily": [{ "date": "2026-09-01", "activeUsers": 0 }]
   },
   "where": { "countries": [{ "name": "", "users": 0 }], "languages": [], "osVersions": [], "appVersions": [] },
-  "movies": { "clicks": { "<movieId>": 0 }, "plays": {}, "completes": {} },
+  "movies": { "key": "title", "clicks": { "<title>": 0 }, "plays": {}, "completes": {} },
   "categories": [{ "name": "", "views": 0 }],
   "missingDimensions": ["movie_id"],
   "notes": { "thresholded": false, "otherRow": false }
 }
 ```
 
-- `movies` is `null` unless `movie_id` is registered. Within it, `clicks` is `null` unless
-  `item_id` is too. `categories` is `null` unless `category_name` is registered.
-- `missingDimensions` lists the unregistered ones by **parameter name** — `"movie_id"`, not
-  `"customEvent:movie_id"` — since that is what the admin types into GA4.
+- `movies.key` is `"title"` or `"id"`, saying what the maps are keyed by. Titles are preferred:
+  they are what is registered and what has history.
+- `movies` is `null` unless `movie_title` or `movie_id` is registered. Within it, `clicks` is
+  `null` unless `item_name` or `item_id` is too. `categories` is `null` unless `category_name` is
+  registered. Clicks use the same key kind as plays, so the two always join.
+- `missingDimensions` lists what to register by **parameter name** — `"movie_title"`, not
+  `"customEvent:movie_title"` — since that is what the admin types into GA4. Where a title or an id
+  would do, it names the title.
 - `notes.thresholded` reflects GA's `subjectToThresholding`: when true, GA withheld rows too
   small to report for privacy. `notes.otherRow` reflects `dataLossFromOtherRow`: some values were
   rolled into an "(other)" row. Either is shown as a short note, since both make totals
@@ -200,9 +218,10 @@ Needed once, in the Google consoles:
    `dashboard-analytics`) with no project roles → Keys → Add key → JSON. Download it.
 4. **Grant read access.** GA4 → Admin → Property access management → add the service account's
    email with the **Viewer** role. Viewer can read reports and nothing else.
-5. **Register custom dimensions** — GA4 → Admin → Custom definitions → Create custom dimension,
-   scope **Event**, for each of `item_id`, `movie_id` and `category_name`. Do this first: every
-   day before it is a day of per-movie data that can never be recovered.
+5. **Custom dimensions.** `movie_title` and/or `item_name` are already registered. If the section
+   reports anything missing — most likely `category_name` — register it under GA4 → Admin →
+   Custom definitions → Create custom dimension, scope **Event**. Registration is not
+   retroactive, so sooner is better.
 6. **Configure.** Set `GA_PROPERTY_ID` to the number, and `GA_SERVICE_ACCOUNT_KEY` to the key
    file base64-encoded on one line (`base64 -i key.json | tr -d '\n'`). In `.env` locally, and in
    the Vercel project's environment variables.
@@ -213,9 +232,9 @@ committed.
 
 ## Testing
 
-- **`analytics.test.js`** — joining GA ids to the library, completion rate (including zero
-  plays), never-played list, movies GA reports that are no longer in the library, comments counted
-  within the range.
+- **`analytics.test.js`** — joining by title and by id; titles shared by two movies; titles
+  differing only by surrounding spaces; completion rate (including zero plays); the never-played
+  list; titles GA reports that the library no longer has; comments counted within the range.
 - **`api/_ga-reports.test.js`** — each report's dimensions, metrics and filters; which reports
   are dropped for each missing dimension; parsing rows, empty reports, and the thresholding flags.
 - **`api/analytics.test.js`** — the handler through `createHandler` with a fake token and a
@@ -237,8 +256,26 @@ committed.
 
 - **Thresholding.** With a modest user count, GA may withhold small rows — a country with a
   handful of users, say. Surfaced through `notes.thresholded` rather than hidden.
+- **Renaming a movie splits its history.** GA keeps recording under the old title up to the
+  rename and the new one after it; the old title then shows under "renamed or removed".
+- **Shared titles are combined.** The 35 duplicated titles show one figure for both copies.
+  Removing the duplicate uploads makes those figures exact.
 - **Quota.** The Data API meters tokens per property per day. Fetching only when the section is
   open and caching for 15 minutes keeps normal use far inside it.
+
+## Phase 2: per-install watch history (a separate spec)
+
+What each app install watched — and so "people who watched X also watched Y" — cannot come from
+the Data API, which has no per-user data. It needs GA's **BigQuery export**, which is a different
+pipeline with its own setup, SQL and endpoint, so it gets its own spec after this one ships.
+Installs appear as anonymous ids; tying them to comment names like "Fancy Lion" would need the
+app to log that name as a user property.
+
+The export is not retroactive, so linking early is the one thing to do now: GA4 → Admin →
+Product links → BigQuery links, project `movie-recap-1306e`, **Daily** export. In the free BigQuery
+sandbox every table expires after 60 days, so history never exceeds two months; enabling billing
+on the Cloud project lifts that while keeping the free allowance (10 GiB storage, 1 TiB of queries
+a month). The standard export limit is 1 million events a day.
 
 ## Out of scope
 
