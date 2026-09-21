@@ -60,3 +60,74 @@ export function formatDuration(seconds) {
     if (minutes > 0) return `${minutes}m ${secs}s`;
     return `${secs}s`;
 }
+
+// GA's counts for one event, summed into normalized keys. The same title may
+// arrive with and without stray spaces, and "(not set)" names nothing.
+function normalizeCounts(counts, key) {
+    const out = new Map();
+    for (const [raw, value] of Object.entries(counts || {})) {
+        const name = key === 'title' ? normalizeTitle(raw) : String(raw);
+        if (!name || name === '(not set)') continue;
+        out.set(name, (out.get(name) || 0) + (Number(value) || 0));
+    }
+    return out;
+}
+
+const byName = (a, b) => a.localeCompare(b);
+
+// The movie table, from the endpoint's `movies` and the library.
+//
+// One row per title — or per id, if that is what GA is keyed by. GA records only
+// the title, so two library copies sharing one have a single combined figure:
+// the row takes a thumbnail from whichever copy has one and says how many
+// copies there are, rather than inventing a split.
+export function buildMovieRows(movies, library, commentCounts = new Map()) {
+    const key = movies?.key === 'id' ? 'id' : 'title';
+    const keyOf = (movie) => (key === 'title' ? normalizeTitle(movie?.title) : String(movie?.id ?? ''));
+
+    const groups = new Map();
+    for (const movie of library || []) {
+        const name = keyOf(movie);
+        if (!name) continue;
+        if (!groups.has(name)) groups.set(name, []);
+        groups.get(name).push(movie);
+    }
+
+    const clicks = movies?.clicks ? normalizeCounts(movies.clicks, key) : null;
+    const plays = normalizeCounts(movies?.plays, key);
+    const completes = normalizeCounts(movies?.completes, key);
+
+    const rows = [];
+    const neverPlayed = [];
+    for (const [name, copies] of groups) {
+        const playCount = plays.get(name) || 0;
+        const completeCount = completes.get(name) || 0;
+        const clickCount = clicks ? (clicks.get(name) || 0) : null;
+        const row = {
+            key: name,
+            title: normalizeTitle(copies[0].title) || name,
+            thumbnail: copies.find((movie) => movie.thumbnail)?.thumbnail || null,
+            copies: copies.length,
+            clicks: clickCount,
+            plays: playCount,
+            completes: completeCount,
+            completionRate: playCount > 0 ? completeCount / playCount : null,
+            comments: copies.reduce((sum, movie) => sum + (commentCounts.get(movie.id) || 0), 0)
+        };
+        // Clicked but never played still earns a row: that gap is worth seeing.
+        if (playCount > 0 || clickCount > 0) rows.push(row);
+        if (playCount === 0) neverPlayed.push(row);
+    }
+
+    rows.sort((a, b) => (b.plays - a.plays) || ((b.clicks || 0) - (a.clicks || 0)) || byName(a.title, b.title));
+    neverPlayed.sort((a, b) => byName(a.title, b.title));
+
+    // Titles GA has that the library does not: renamed or removed movies.
+    const reported = new Set([...plays.keys(), ...(clicks ? clicks.keys() : [])]);
+    const notInLibrary = [...reported]
+        .filter((name) => !groups.has(name))
+        .map((name) => ({ key: name, plays: plays.get(name) || 0, clicks: clicks ? (clicks.get(name) || 0) : null }))
+        .sort((a, b) => (b.plays - a.plays) || ((b.clicks || 0) - (a.clicks || 0)) || byName(a.key, b.key));
+
+    return { rows, neverPlayed, notInLibrary };
+}
