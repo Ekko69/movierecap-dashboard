@@ -63,3 +63,53 @@ export function detectScript(text) {
 
     return needsTranslation(value) ? 'unknown' : 'empty';
 }
+
+// A thread's replies, oldest first: a conversation reads top to bottom.
+function flattenReplies(replies) {
+    if (!replies || typeof replies !== 'object') return [];
+
+    return Object.entries(replies)
+        .filter(([, reply]) => reply && typeof reply === 'object')
+        .map(([replyId, reply]) => ({
+            id: replyId,
+            text: reply.text || '',
+            userName: reply.userName || 'Anonymous',
+            timestamp: reply.timestamp || 0,
+            isAdmin: reply.isAdmin === true
+        }))
+        .sort((a, b) => (a.timestamp - b.timestamp) || a.id.localeCompare(b.id));
+}
+
+// The comments tree as a newest-first inbox, each row joined to its movie
+// title. Replies ride along on their parent rather than becoming rows of their
+// own — a reply read out of context means nothing.
+//
+// Timestamp ties break by id so the list does not reshuffle between renders;
+// onValue re-fires on every write and an unstable sort would visibly jump.
+export function flattenComments(tree, moviesById = new Map()) {
+    if (!tree || typeof tree !== 'object') return [];
+
+    const rows = [];
+
+    for (const [movieId, comments] of Object.entries(tree)) {
+        if (!comments || typeof comments !== 'object') continue;
+
+        for (const [commentId, comment] of Object.entries(comments)) {
+            if (!comment || typeof comment !== 'object') continue;
+
+            rows.push({
+                id: commentId,
+                movieId,
+                movieTitle: moviesById.get(movieId)?.title || 'Unknown movie',
+                text: comment.text || '',
+                userName: comment.userName || 'Anonymous',
+                timestamp: comment.timestamp || 0,
+                isAdmin: comment.isAdmin === true,
+                replies: flattenReplies(comment.replies)
+            });
+        }
+    }
+
+    rows.sort((a, b) => (b.timestamp - a.timestamp) || a.id.localeCompare(b.id));
+    return rows;
+}
