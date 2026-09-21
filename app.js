@@ -3380,7 +3380,9 @@ async function deleteComment(item, row) {
 // --- Analytics ---
 //
 // The view reads movies and comments through getters, so every render joins
-// against what is loaded at that moment.
+// against what is loaded at that moment. The router and both listeners above
+// reference analyticsView before this line; that is safe only because they run
+// after module evaluation — app.js has no top-level await to change that.
 const analyticsView = initAnalyticsView({
     section: document.getElementById('analytics-view'),
     getMovies: () => allMovies,

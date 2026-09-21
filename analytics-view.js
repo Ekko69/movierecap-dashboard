@@ -42,9 +42,9 @@ function spinner() {
 }
 
 export function initAnalyticsView({ section, getMovies, getCommentRows }) {
-    if (!section) return { show() {}, rerender() {} };
-
-    const body = section.querySelector('#analytics-body');
+    const body = section?.querySelector('#analytics-body');
+    // Without both, rendering could throw into the listeners that call rerender.
+    if (!section || !body) return { show() {}, rerender() {} };
     const rangeButtons = [...section.querySelectorAll('.range-btn')];
 
     let range = 28;
@@ -159,11 +159,16 @@ export function initAnalyticsView({ section, getMovies, getCommentRows }) {
     return {
         // The router calls this whenever the view opens. Only the first visit
         // fetches: GA's figures change at most daily, and the range buttons
-        // refetch on demand.
+        // refetch on demand. Later visits re-join what was already fetched,
+        // because movies or comments may have changed while the view was
+        // hidden, when rerender() does nothing.
         show() {
-            if (started) return;
-            started = true;
-            load();
+            if (!started) {
+                started = true;
+                load();
+            } else if (data) {
+                render();
+            }
         },
         // Called when movies or comments change. The join is redone from the
         // figures already fetched; GA is not asked again.
