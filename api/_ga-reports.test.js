@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseRange, registeredParams, movieKeys, missingDimensions } from './_ga-reports.js';
+import { parseRange, registeredParams, movieKeys, missingDimensions, buildReports, toBatches } from './_ga-reports.js';
 
 test('parseRange accepts only the three offered ranges', () => {
     assert.equal(parseRange('7'), 7);
@@ -55,4 +55,65 @@ test('missingDimensions names what to register, preferring titles', () => {
     assert.deepEqual(missingDimensions(new Set(['movie_id'])), ['item_id', 'category_name']);
     assert.deepEqual(missingDimensions(new Set(['item_name', 'category_name'])), ['movie_title']);
     assert.deepEqual(missingDimensions(new Set(['movie_title', 'item_name', 'category_name'])), []);
+});
+
+const ALL = new Set(['movie_title', 'item_name', 'category_name']);
+
+test('buildReports runs the six built-in reports whatever is registered', () => {
+    const names = buildReports(28, new Set()).map((report) => report.name);
+    assert.deepEqual(names, ['totals', 'daily', 'countries', 'languages', 'osVersions', 'appVersions']);
+});
+
+test('buildReports adds movie and category reports only for registered dimensions', () => {
+    // Asking GA for an unregistered dimension fails the whole batch.
+    assert.deepEqual(buildReports(28, ALL).slice(6).map((r) => r.name), ['plays', 'clicks', 'categories']);
+    assert.deepEqual(buildReports(28, new Set(['movie_title'])).slice(6).map((r) => r.name), ['plays']);
+    assert.deepEqual(buildReports(28, new Set(['category_name'])).slice(6).map((r) => r.name), ['categories']);
+});
+
+test('buildReports uses the range from N days ago through yesterday', () => {
+    for (const report of buildReports(7, ALL)) {
+        assert.deepEqual(report.request.dateRanges, [{ startDate: '7daysAgo', endDate: 'yesterday' }], report.name);
+    }
+});
+
+test('buildReports asks for the right fields', () => {
+    const byName = Object.fromEntries(buildReports(28, ALL).map((r) => [r.name, r.request]));
+
+    assert.deepEqual(byName.totals.metrics.map((m) => m.name),
+        ['activeUsers', 'newUsers', 'sessions', 'userEngagementDuration']);
+    assert.equal(byName.totals.dimensions, undefined);
+
+    assert.deepEqual(byName.daily.dimensions, [{ name: 'date' }]);
+
+    assert.deepEqual(byName.countries.dimensions, [{ name: 'country' }]);
+    assert.equal(byName.countries.limit, 10);
+    assert.deepEqual(byName.countries.orderBys, [{ metric: { metricName: 'activeUsers' }, desc: true }]);
+
+    assert.deepEqual(byName.plays.dimensions, [{ name: 'eventName' }, { name: 'customEvent:movie_title' }]);
+    assert.deepEqual(byName.plays.dimensionFilter,
+        { filter: { fieldName: 'eventName', inListFilter: { values: ['video_start', 'video_complete'] } } });
+    assert.equal(byName.plays.limit, undefined, 'movie reports return every row');
+
+    assert.deepEqual(byName.clicks.dimensions, [{ name: 'customEvent:item_name' }]);
+    assert.deepEqual(byName.clicks.dimensionFilter,
+        { filter: { fieldName: 'eventName', stringFilter: { value: 'select_content' } } });
+
+    assert.deepEqual(byName.categories.dimensions, [{ name: 'customEvent:category_name' }]);
+    assert.deepEqual(byName.categories.dimensionFilter,
+        { filter: { fieldName: 'eventName', stringFilter: { value: 'view_category' } } });
+});
+
+test('buildReports keys movies by id when only ids are registered', () => {
+    const byName = Object.fromEntries(buildReports(28, new Set(['movie_id', 'item_id'])).map((r) => [r.name, r.request]));
+    assert.deepEqual(byName.plays.dimensions, [{ name: 'eventName' }, { name: 'customEvent:movie_id' }]);
+    assert.deepEqual(byName.clicks.dimensions, [{ name: 'customEvent:item_id' }]);
+});
+
+test('toBatches splits into groups of at most five', () => {
+    // batchRunReports accepts at most 5 requests.
+    const reports = buildReports(28, ALL);
+    assert.deepEqual(toBatches(reports).map((batch) => batch.length), [5, 4]);
+    assert.deepEqual(toBatches(buildReports(28, new Set())).map((b) => b.length), [5, 1]);
+    assert.deepEqual(toBatches([]), []);
 });
