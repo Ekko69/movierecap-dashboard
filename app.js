@@ -3040,12 +3040,25 @@ function buildCommentBody(item, movieTitle) {
     return wrapper;
 }
 
-// The per-comment action row. Reply and Delete are added by the tasks that
-// implement them.
+// The per-comment action row. Replies are flat under their comment in the
+// data, so only a top-level comment can be replied to.
 function buildActions(item, isTopLevel) {
     const actions = document.createElement('div');
     actions.className = 'comment-actions';
+
+    if (isTopLevel) {
+        actions.appendChild(actionButton('Reply', 'btn-secondary', () => openReplyDialog(item)));
+    }
     return actions;
+}
+
+function actionButton(label, variant, onClick) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `btn btn-sm ${variant}`;
+    button.textContent = label;
+    button.addEventListener('click', onClick);
+    return button;
 }
 
 // openForm is the same entry point the movie cards and the last-added panel
@@ -3130,4 +3143,153 @@ document.getElementById('comment-translate-all')?.addEventListener('click', () =
     translationScheduler.clearAttempts();
     showToast(`Translating ${pending.length} comments...`);
     translatePending();
+});
+
+// --- Replying ---
+//
+// Compose in English, translate into the commenter's language, preview, post.
+// The preview is not a nicety: it is the only thing between a bad machine
+// translation and a user reading it, so nothing is ever posted that the admin
+// has not seen exactly.
+
+const replyModal = document.getElementById('reply-modal');
+const replyInput = document.getElementById('reply-input');
+const replyPreview = document.getElementById('reply-preview');
+const replyPreviewText = document.getElementById('reply-preview-text');
+const replyPostBtn = document.getElementById('reply-post');
+const replyTranslateBtn = document.getElementById('reply-translate');
+
+let replyTarget = null;   // the comment row being replied to
+let replyBody = '';       // exactly what will be written; set only by a preview
+
+function openReplyDialog(row) {
+    replyTarget = row;
+
+    document.getElementById('reply-context-movie').textContent = `🎬 ${row.movieTitle}`;
+    document.getElementById('reply-context-user').textContent =
+        `${row.userName} · ${formatRelativeTime(row.timestamp, Date.now())}`;
+    document.getElementById('reply-context-text').textContent = row.text;
+    const translated = foreignTranslation(row);
+    document.getElementById('reply-context-translation').textContent =
+        translated ? `🌐 ${translated.text}` : '';
+
+    replyInput.value = '';
+    clearReplyPreview();
+    replyModal.classList.remove('hidden');
+    replyInput.focus();
+}
+
+function closeReplyDialog() {
+    replyModal.classList.add('hidden');
+    replyTarget = null;
+    clearReplyPreview();
+}
+
+// Any edit invalidates the preview, so Post is only ever enabled for text the
+// admin is looking at.
+function clearReplyPreview() {
+    replyBody = '';
+    replyPreviewText.textContent = '';
+    replyPreview.classList.add('hidden');
+    replyPostBtn.disabled = true;
+}
+
+function showReplyPreview(body) {
+    replyBody = body;
+    replyPreviewText.textContent = body;
+    replyPreview.classList.remove('hidden');
+    replyPostBtn.disabled = false;
+}
+
+document.getElementById('reply-cancel')?.addEventListener('click', closeReplyDialog);
+document.getElementById('reply-close')?.addEventListener('click', closeReplyDialog);
+replyInput?.addEventListener('input', clearReplyPreview);
+
+replyTranslateBtn?.addEventListener('click', async () => {
+    const target = replyTarget;
+    const original = replyInput.value.trim();
+    if (!target) return;
+    if (!original) {
+        showToast('Type a reply first.');
+        return;
+    }
+
+    // The language the MODEL detected for the comment, never one guessed from
+    // its script: Persian is written in Arabic script and Ukrainian in
+    // Cyrillic, so guessing would answer them in Arabic and Russian. 'unknown'
+    // is text the model could not place, so there is no language to aim at.
+    const targetLang = translations[target.id]?.lang;
+    if (!targetLang || targetLang === TARGET_LANG || targetLang === 'unknown') {
+        showReplyPreview(original);
+        if (!targetLang && needsTranslation(target.text)) {
+            showToast('This comment is not translated yet, so its language is unknown — the reply will post in English.');
+        }
+        return;
+    }
+
+    // The admin may edit the text or close the dialog while this runs. A
+    // translation of text they have since changed must not become the preview.
+    const stillCurrent = () => replyTarget === target && replyInput.value.trim() === original;
+
+    replyTranslateBtn.disabled = true;
+    replyTranslateBtn.textContent = 'Translating...';
+    try {
+        const response = await fetch('/api/translate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: [{ id: 'reply', text: original }], targetLang })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `Translate failed (${response.status})`);
+        if (!stillCurrent()) return;
+
+        const translated = data.items?.[0]?.text || '';
+        showReplyPreview(formatAdminReply(translated, original));
+        if (!translated.trim() || translated.trim() === original) {
+            showToast("Couldn't translate this reply — the preview shows it will post in English.");
+        }
+    } catch (error) {
+        console.error('Reply translation failed:', error);
+        if (!stillCurrent()) return;
+        // Offer the English rather than discard what was typed.
+        showReplyPreview(original);
+        showToast(`Translation failed — you can still post the English: ${error.message}`);
+    } finally {
+        replyTranslateBtn.disabled = false;
+        replyTranslateBtn.textContent = '🌐 Translate & preview';
+    }
+});
+
+replyPostBtn?.addEventListener('click', async () => {
+    const target = replyTarget;
+    if (!target || !replyBody) return;
+
+    // A comment deleted since the dialog opened would get a replies node with
+    // nothing else beside it — a blank ghost comment in the app.
+    if (!commentsTree?.[target.movieId]?.[target.id]) {
+        showToast('That comment was deleted, so the reply was not posted.');
+        closeReplyDialog();
+        return;
+    }
+
+    replyPostBtn.disabled = true;
+    replyPostBtn.textContent = 'Posting...';
+    try {
+        await push(ref(db, `comments/${target.movieId}/${target.id}/replies`), {
+            text: replyBody,
+            timestamp: Date.now(),
+            userName: ADMIN_NAME,
+            // Inert in the consumer app today; lets a verified badge be added
+            // later without backfilling old replies.
+            isAdmin: true
+        });
+        showToast('Reply posted.');
+        closeReplyDialog();
+    } catch (error) {
+        console.error('Posting reply failed:', error);
+        showToast(`Could not post reply: ${error.message}`);
+        replyPostBtn.disabled = false;
+    } finally {
+        replyPostBtn.textContent = 'Post reply';
+    }
 });
