@@ -26,21 +26,26 @@ export function needsTranslation(text) {
 // a translation target and answer a Persian speaker in Arabic. The real
 // language is whatever the model detects and stores.
 //
+// Unicode script properties rather than hand-written codepoint ranges: a
+// literal range has to be kept in step with every extended block, and getting
+// it wrong is silent. \p{Script=Latin} already knows that Vietnamese's ệ and
+// Yoruba's ṣ are Latin, that ὶ is Greek, and that × and ÷ are neither.
+//
 // Kana precedes han because Japanese mixes the two and han alone would report
 // Japanese as han. Latin comes last so mixed text reports the script that
 // actually needs translating.
-const SCRIPT_RANGES = [
-    ['myanmar', /[က-႟ꧠ-꧿ꩠ-ꩿ]/],   // incl. Extended-A/B
-    ['arabic', /[؀-ۿݐ-ݿࢠ-ࣿ]/],    // incl. Supplement, Extended-A
-    ['thai', /[฀-๿]/],
-    ['kana', /[぀-ヿ]/],
-    ['hangul', /[가-힣]/],
-    ['han', /[一-鿿]/],
-    ['devanagari', /[ऀ-ॿ]/],
-    ['cyrillic', /[Ѐ-ӿ]/],
-    ['greek', /[Ͱ-Ͽ]/],
-    ['hebrew', /[֐-׿]/],
-    ['latin', /[A-Za-zÀ-ɏ]/]
+const SCRIPT_PATTERNS = [
+    ['myanmar', /\p{Script=Myanmar}/u],
+    ['arabic', /\p{Script=Arabic}/u],
+    ['thai', /\p{Script=Thai}/u],
+    ['kana', /\p{Script=Hiragana}|\p{Script=Katakana}/u],
+    ['hangul', /\p{Script=Hangul}/u],
+    ['han', /\p{Script=Han}/u],
+    ['devanagari', /\p{Script=Devanagari}/u],
+    ['cyrillic', /\p{Script=Cyrillic}/u],
+    ['greek', /\p{Script=Greek}/u],
+    ['hebrew', /\p{Script=Hebrew}/u],
+    ['latin', /\p{Script=Latin}/u]
 ];
 
 // The writing system a comment uses. This drives a UI hint and nothing else.
@@ -52,7 +57,7 @@ export function detectScript(text) {
     const value = String(text ?? '');
     if (!value) return 'empty';
 
-    for (const [script, pattern] of SCRIPT_RANGES) {
+    for (const [script, pattern] of SCRIPT_PATTERNS) {
         if (pattern.test(value)) return script;
     }
 

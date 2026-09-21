@@ -47,6 +47,25 @@ test('detectScript distinguishes an unrecognized script from latin', () => {
     assert.equal(detectScript('ქართული'), 'unknown');    // Georgian
 });
 
+test('detectScript handles Latin scripts beyond the basic range', () => {
+    // Vietnamese and Yoruba stack diacritics into Latin Extended Additional.
+    // A hand-rolled A-Z range reported these as an unrecognized script.
+    assert.equal(detectScript('ạệộ'), 'latin');
+    assert.equal(detectScript('ẹọṣ'), 'latin');
+    assert.equal(detectScript('không có gì'), 'latin');
+});
+
+test('detectScript covers the extended blocks of listed scripts', () => {
+    assert.equal(detectScript('ὶ'), 'greek');        // Greek Extended, polytonic
+    assert.equal(detectScript('ࡰ'), 'arabic');  // Arabic Extended-B
+});
+
+test('detectScript treats mathematical symbols as no language', () => {
+    // × and ÷ sit inside the Latin-1 range but are symbols, not letters.
+    assert.equal(detectScript('5×3'), 'empty');
+    assert.equal(detectScript('÷'), 'empty');
+});
+
 test('detectScript reports empty when there is no language present', () => {
     assert.equal(detectScript(''), 'empty');
     assert.equal(detectScript(null), 'empty');
