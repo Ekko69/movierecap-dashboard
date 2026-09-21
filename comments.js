@@ -191,3 +191,63 @@ export function formatAdminReply(translation, original) {
     if (!translated || translated === source) return source;
     return `${translated}${REPLY_SEPARATOR}${source}`;
 }
+
+// Runs translation for whatever is pending, one batch at a time, never two
+// passes at once. Everything it touches is passed in, so these rules — each
+// one learned from a bug — can be tested without a browser:
+//
+//  - Nothing runs until isReady() says comments and the cache have both
+//    loaded; running before the cache arrives re-pays for every comment.
+//  - An item is marked attempted only as its batch is sent, so a failure
+//    part-way leaves the unsent batches free for the next run.
+//  - Each item is sent at most once until clearAttempts(). Every cache write
+//    re-triggers a run, so a comment the model keeps dropping would otherwise
+//    be re-sent in a loop.
+//  - A call that arrives mid-run is not dropped: one more pass follows, so a
+//    comment posted during the backlog is picked up. Not after a failure,
+//    though — that pass would most likely fail the same way.
+export function createTranslationScheduler({
+    isReady,
+    collectPending,
+    translateBatch,
+    cache,
+    onError,
+    batchSize = 25
+}) {
+    const attempted = new Set();
+    let running = false;
+    let rerun = false;
+
+    async function run() {
+        if (!isReady()) return;
+        if (running) {
+            rerun = true;
+            return;
+        }
+
+        running = true;
+        let failed = false;
+        try {
+            const pending = collectPending().filter((item) => !attempted.has(item.id));
+            for (const batch of batchItems(pending, batchSize)) {
+                batch.forEach((item) => attempted.add(item.id));
+                await cache(await translateBatch(batch));
+            }
+        } catch (error) {
+            failed = true;
+            onError(error);
+        } finally {
+            running = false;
+        }
+
+        const again = rerun && !failed;
+        rerun = false;
+        if (again) await run();
+    }
+
+    return {
+        run,
+        clearAttempts: () => attempted.clear(),
+        isRunning: () => running
+    };
+}

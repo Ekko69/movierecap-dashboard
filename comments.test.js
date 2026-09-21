@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { detectScript, needsTranslation, TARGET_LANG, ADMIN_NAME, flattenComments, collectTranslatable, batchItems, formatAdminReply } from './comments.js';
+import { detectScript, needsTranslation, TARGET_LANG, ADMIN_NAME, flattenComments, collectTranslatable, batchItems, formatAdminReply, createTranslationScheduler } from './comments.js';
 
 test('detectScript names the scripts present in the live data', () => {
     assert.equal(detectScript('ဘာသာပြန်ပေးပါ'), 'myanmar');
@@ -345,4 +345,148 @@ test('collectTranslatable is not fooled by an id that names an Object method', (
     // is truthy on any object — which would silently skip this item.
     const rows = [{ id: 'constructor', text: 'hello', isAdmin: false, replies: [] }];
     assert.deepEqual(collectTranslatable(rows, {}), [{ id: 'constructor', text: 'hello' }]);
+});
+
+// A fake world for the scheduler. `pending` is what still needs translating;
+// caching an item removes it from there, as the real cache does. Every batch
+// sent is recorded, and the `failOn`-th call (1-based) throws.
+function fakeScheduler({ pending, failOn = 0, ready = () => true, onCache = async () => {} }) {
+    const sent = [];
+    const errors = [];
+    let calls = 0;
+    const scheduler = createTranslationScheduler({
+        isReady: ready,
+        collectPending: () => pending.filter((item) => !item.cached),
+        translateBatch: async (batch) => {
+            calls += 1;
+            if (calls === failOn) throw new Error('rate limited');
+            sent.push(batch.map((item) => item.id));
+            return batch.map((item) => ({ id: item.id, lang: 'my', text: 't' }));
+        },
+        cache: async (results) => {
+            for (const result of results) pending.find((item) => item.id === result.id).cached = true;
+            await onCache();
+        },
+        onError: (error) => errors.push(error.message),
+        batchSize: 2
+    });
+    return { scheduler, sent, errors };
+}
+
+const pendingItems = (count) => Array.from({ length: count }, (_, i) => ({ id: `c${i}`, text: 'x' }));
+
+test('scheduler sends nothing until both halves have loaded', async () => {
+    // Running before the cache arrives would re-pay for every comment.
+    let ready = false;
+    const { scheduler, sent } = fakeScheduler({ pending: pendingItems(3), ready: () => ready });
+    await scheduler.run();
+    assert.deepEqual(sent, []);
+
+    ready = true;
+    await scheduler.run();
+    assert.deepEqual(sent, [['c0', 'c1'], ['c2']]);
+});
+
+test('scheduler keeps unsent batches eligible after a failure part-way', async () => {
+    // A transient error on batch two must not strand batch three, which was
+    // never sent. Batch two was sent, so it has had its one attempt.
+    const { scheduler, sent, errors } = fakeScheduler({ pending: pendingItems(6), failOn: 2 });
+    await scheduler.run();
+    assert.deepEqual(sent, [['c0', 'c1']]);
+    assert.deepEqual(errors, ['rate limited']);
+
+    await scheduler.run();
+    assert.deepEqual(sent, [['c0', 'c1'], ['c4', 'c5']]);
+});
+
+test('scheduler sends an item once even if it never gets cached', async () => {
+    // Every cache write re-triggers a run; a comment the model keeps dropping
+    // would otherwise be re-sent in a loop.
+    const sent = [];
+    const scheduler = createTranslationScheduler({
+        isReady: () => true,
+        collectPending: () => pendingItems(2),
+        translateBatch: async (batch) => { sent.push(batch.map((item) => item.id)); return []; },
+        cache: async () => {},
+        onError: () => {}
+    });
+    await scheduler.run();
+    await scheduler.run();
+    assert.deepEqual(sent, [['c0', 'c1']]);
+});
+
+test('scheduler picks up work that arrives mid-run', async () => {
+    // A comment posted while the backlog translates fires its listener, which
+    // calls run() mid-pass. That call must not simply be dropped.
+    const pending = pendingItems(2);
+    let arrived = false;
+    const { scheduler, sent } = fakeScheduler({
+        pending,
+        onCache: async () => {
+            if (arrived) return;
+            arrived = true;
+            pending.push({ id: 'late', text: 'x' });
+            await scheduler.run();
+        }
+    });
+    await scheduler.run();
+    assert.deepEqual(sent, [['c0', 'c1'], ['late']]);
+});
+
+test('scheduler takes no extra pass straight after a failure', async () => {
+    // That pass would most likely fail the same way and double the error.
+    // Six items, so a never-sent batch (c4, c5) remains after the failure:
+    // with only four, an extra pass would find nothing to send, and this test
+    // would pass whether or not the rule held.
+    let triggered = false;
+    const { scheduler, sent, errors } = fakeScheduler({
+        pending: pendingItems(6),
+        failOn: 2,
+        onCache: async () => {
+            if (triggered) return;
+            triggered = true;
+            await scheduler.run();
+        }
+    });
+    await scheduler.run();
+    assert.deepEqual(sent, [['c0', 'c1']]);
+    assert.equal(errors.length, 1);
+});
+
+test('scheduler never runs two passes at once', async () => {
+    let inFlight = 0;
+    let most = 0;
+    const scheduler = createTranslationScheduler({
+        isReady: () => true,
+        collectPending: () => pendingItems(4),
+        translateBatch: async () => {
+            inFlight += 1;
+            most = Math.max(most, inFlight);
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            inFlight -= 1;
+            return [];
+        },
+        cache: async () => {},
+        onError: () => {},
+        batchSize: 2
+    });
+    await Promise.all([scheduler.run(), scheduler.run(), scheduler.run()]);
+    assert.equal(most, 1);
+    assert.equal(scheduler.isRunning(), false);
+});
+
+test('scheduler sends items again after clearAttempts', async () => {
+    // "Translate all" is the admin's way to retry what the model dropped.
+    const sent = [];
+    const scheduler = createTranslationScheduler({
+        isReady: () => true,
+        collectPending: () => pendingItems(1),
+        translateBatch: async (batch) => { sent.push(batch.map((item) => item.id)); return []; },
+        cache: async () => {},
+        onError: () => {}
+    });
+    await scheduler.run();
+    scheduler.clearAttempts();
+    await scheduler.run();
+    assert.deepEqual(sent, [['c0'], ['c0']]);
 });

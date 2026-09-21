@@ -16,6 +16,11 @@ const CLAUDE_MODEL = 'claude-opus-5';
 const MAX_ITEMS = 25;
 const MAX_TEXT_CHARS = 500;
 
+// Echo retries in flight at once. This path also serves the Claude fallback,
+// which is reached exactly when OpenAI is already struggling, so a burst of up
+// to 25 simultaneous calls would invite a wave of rate limits.
+const RETRY_CONCURRENCY = 5;
+
 const SYSTEM_PROMPT = `You translate short user comments from a movie app.
 Reply with JSON only, in this exact shape:
 {"items":[{"id":"<the id you were given>","lang":"<ISO 639-1 code of the ORIGINAL language>","text":"<translation>"}]}
@@ -30,6 +35,16 @@ Rules:
 // wrap prose around it. Everything here is defensive: a malformed response
 // must raise a describable error, never crash the request or silently return
 // half a batch.
+// The model is asked for an ISO 639-1 code, but its output is free-form: it
+// may say "EN" or "zh-Hans", or whatever a hostile comment coaxed out of it.
+// The client compares this against its own language code, so it is normalized
+// here, and anything unrecognizable becomes 'unknown'.
+function normalizeLang(value) {
+    if (typeof value !== 'string') return 'unknown';
+    const code = value.trim().toLowerCase().split('-')[0];
+    return /^[a-z]{2,3}$/.test(code) ? code : 'unknown';
+}
+
 export function parseTranslationResponse(content) {
     if (!content) throw new Error('Translator returned an empty response');
 
@@ -60,7 +75,7 @@ export function parseTranslationResponse(content) {
         .filter(item => item && typeof item.id === 'string')
         .map(item => ({
             id: item.id,
-            lang: typeof item.lang === 'string' ? item.lang : 'unknown',
+            lang: normalizeLang(item.lang),
             text: typeof item.text === 'string' ? item.text : ''
         }));
 }
@@ -186,7 +201,7 @@ async function retryEchoes(call, requested, result, target, requestId, provider)
     console.warn('Translate: retrying echoed items alone', { requestId, provider, count: echoes.length });
     const byId = new Map(requested.map((item) => [item.id, item]));
 
-    const retried = await Promise.all(echoes.map(async (echo) => {
+    const retryOne = async (echo) => {
         const single = [byId.get(echo.id)];
         try {
             const content = await call(buildPrompt(single, target));
@@ -194,7 +209,13 @@ async function retryEchoes(call, requested, result, target, requestId, provider)
         } catch {
             return null;
         }
-    }));
+    };
+
+    const retried = [];
+    for (let index = 0; index < echoes.length; index += RETRY_CONCURRENCY) {
+        const chunk = echoes.slice(index, index + RETRY_CONCURRENCY);
+        retried.push(...await Promise.all(chunk.map(retryOne)));
+    }
 
     const replacements = new Map();
     const failed = new Set();

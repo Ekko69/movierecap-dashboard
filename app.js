@@ -32,7 +32,8 @@ import {
     flattenComments,
     collectTranslatable,
     batchItems,
-    formatAdminReply
+    formatAdminReply,
+    createTranslationScheduler
 } from './comments.js';
 
 // Firebase Config
@@ -2940,7 +2941,7 @@ function renderComments() {
     const rows = visibleRows();
 
     if (commentsSummary) {
-        const replyCount = commentRows.reduce((total, row) => total + row.replies.length, 0);
+        const replyCount = rows.reduce((total, row) => total + row.replies.length, 0);
         commentsSummary.textContent =
             `${rows.length} of ${commentRows.length} comments · ${replyCount} replies`;
     }
@@ -3068,13 +3069,6 @@ commentLangFilter?.addEventListener('change', renderComments);
 // Strictly additive: every failure path leaves comments rendered with their
 // original text. Nothing here may stop the inbox from displaying.
 
-let translating = false;
-
-// Ids already sent this page load. Every cache write re-fires the translations
-// listener, so a comment the model keeps dropping would otherwise be re-sent
-// in a loop. It gets one attempt per load; "Translate all" clears this.
-const translationAttempted = new Set();
-
 async function translateBatch(batch) {
     const response = await fetch('/api/translate', {
         method: 'POST',
@@ -3099,41 +3093,40 @@ async function cacheTranslations(results) {
     }
 }
 
-async function translatePending() {
-    // Both halves must be in. Running with comments but before the cache has
-    // loaded would re-translate everything already paid for.
-    if (!commentsLoaded || !translationsLoaded || translating) return;
-
-    const pending = collectTranslatable(commentRows, translations)
-        .filter((item) => !translationAttempted.has(item.id));
-    if (pending.length === 0) return;
-    pending.forEach((item) => translationAttempted.add(item.id));
-
-    translating = true;
-    try {
-        // Cached batch by batch, so a failure part-way keeps what was paid for.
-        for (const batch of batchItems(pending, 25)) {
-            await cacheTranslations(await translateBatch(batch));
-        }
-    } catch (error) {
+// When and what to send — waiting for both listeners, one attempt per item,
+// no overlapping passes, picking up work that arrives mid-run — is decided by
+// the scheduler in comments.js, where each of those rules is tested.
+const translationScheduler = createTranslationScheduler({
+    isReady: () => commentsLoaded && translationsLoaded,
+    collectPending: () => collectTranslatable(commentRows, translations),
+    translateBatch,
+    cache: cacheTranslations,
+    onError: (error) => {
         console.error('Comment translation failed:', error);
         showToast(`Translation unavailable: ${error.message}`);
-    } finally {
-        translating = false;
     }
+});
+
+function translatePending() {
+    translationScheduler.run();
 }
 
 document.getElementById('comment-translate-all')?.addEventListener('click', () => {
-    if (translating) {
+    if (!commentsLoaded || !translationsLoaded) {
+        showToast('Comments are still loading.');
+        return;
+    }
+    if (translationScheduler.isRunning()) {
         showToast('Translation is already running.');
         return;
     }
-    translationAttempted.clear();
     const pending = collectTranslatable(commentRows, translations);
     if (pending.length === 0) {
         showToast('Everything is already translated.');
         return;
     }
+    // Lets the admin retry what the model dropped earlier in this session.
+    translationScheduler.clearAttempts();
     showToast(`Translating ${pending.length} comments...`);
     translatePending();
 });

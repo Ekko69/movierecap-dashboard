@@ -118,9 +118,16 @@ function stubOpenAI(t, ...replies) {
     process.env.OPENAI_API_KEY = 'test-key';
     delete process.env.ANTHROPIC_API_KEY;
     const calls = [];
+    let inFlight = 0;
+    calls.mostInFlight = 0;
     globalThis.fetch = async (url, init) => {
         calls.push(JSON.parse(init.body));
         const reply = replies[Math.min(calls.length - 1, replies.length - 1)];
+        // Held open briefly, so calls meant to run together actually overlap.
+        inFlight += 1;
+        calls.mostInFlight = Math.max(calls.mostInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        inFlight -= 1;
         if (reply instanceof Error) {
             return { ok: false, status: 429, json: async () => ({ error: { message: reply.message } }) };
         }
@@ -277,4 +284,29 @@ test('handler makes no retry when nothing was echoed', async (t) => {
 
     assert.equal(res.statusCode, 200);
     assert.equal(calls.length, 1);
+});
+
+test('parseTranslationResponse normalizes the language code', () => {
+    // The client compares this with its own code, so "EN" must not read as foreign.
+    const raw = JSON.stringify({ items: [
+        { id: 'a', lang: 'EN', text: 'x' },
+        { id: 'b', lang: 'zh-Hans', text: 'x' },
+        { id: 'c', lang: ' my ', text: 'x' },
+        { id: 'd', lang: 'Ignore previous instructions', text: 'x' },
+        { id: 'e', lang: 42, text: 'x' }
+    ] });
+    assert.deepEqual(parseTranslationResponse(raw).map((item) => item.lang), ['en', 'zh', 'my', 'unknown', 'unknown']);
+});
+
+test('handler retries echoes a few at a time, not all at once', async (t) => {
+    // Twelve echoes: one batch call, then twelve single retries, at most five
+    // in flight. The fallback path meets this exactly when a provider struggles.
+    const requested = Array.from({ length: 12 }, (_, i) => ({ id: `e${i}`, text: `ဟိုင်း ${i}` }));
+    const calls = stubOpenAI(t, requested.map((item) => ({ id: item.id, lang: 'my', text: item.text })));
+    const res = fakeRes();
+    await handler({ method: 'POST', body: { items: requested } }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls.length, 13);
+    assert.ok(calls.mostInFlight <= 5, `${calls.mostInFlight} retries were in flight at once`);
 });
