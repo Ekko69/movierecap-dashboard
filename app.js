@@ -2734,6 +2734,7 @@ document.getElementById('youtube-url')?.addEventListener('input', () => {
 
 initBulkYoutube({
     extractYouTubeVideoId,
+    findMovieByVideoId,
     uploadItemVideo,
     uploadThumbnailBlob,
     enrichAndSave,
