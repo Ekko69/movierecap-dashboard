@@ -12,34 +12,49 @@ export const TARGET_LANG = 'en';
 // The display name admin replies are posted under, seen by users in the app.
 export const ADMIN_NAME = 'Movie Recap';
 
-// Kana is checked before han because Japanese mixes the two, and han alone
-// would misreport Japanese as Chinese. Ordered by what the live data contains.
-const SCRIPT_RANGES = [
-    ['my', /[က-႟]/],   // Burmese — 65 comments
-    ['ar', /[؀-ۿ]/],   // Arabic — 7 comments
-    ['th', /[฀-๿]/],   // Thai — 1 comment
-    ['ja', /[぀-ヿ]/],   // Hiragana + katakana
-    ['ko', /[가-힯]/],   // Hangul
-    ['zh', /[一-鿿]/],   // Han
-    ['hi', /[ऀ-ॿ]/],   // Devanagari
-    ['ru', /[Ѐ-ӿ]/]    // Cyrillic
-];
-
-// The script a comment is written in, as a hint only. Latin-script text still
-// goes to the model, because romanized Burmese and Tagalog are
-// indistinguishable from English by regex.
-export function detectScript(text) {
-    if (!text) return 'empty';
-    for (const [code, pattern] of SCRIPT_RANGES) {
-        if (pattern.test(text)) return code;
-    }
-    return 'latin';
-}
-
 // Whether this text carries words worth sending to a translator. Emoji,
 // punctuation and bare digits carry no language, so they never leave the
 // browser.
 export function needsTranslation(text) {
     if (!text) return false;
     return /\p{L}/u.test(String(text));
+}
+
+// Writing systems, checked in order. These name the SCRIPT, never the
+// language — Persian and Urdu are written in Arabic script, Ukrainian and
+// Bulgarian in Cyrillic. Naming these 'ar' or 'ru' would invite using them as
+// a translation target and answer a Persian speaker in Arabic. The real
+// language is whatever the model detects and stores.
+//
+// Kana precedes han because Japanese mixes the two and han alone would report
+// Japanese as han. Latin comes last so mixed text reports the script that
+// actually needs translating.
+const SCRIPT_RANGES = [
+    ['myanmar', /[က-႟ꧠ-꧿ꩠ-ꩿ]/],   // incl. Extended-A/B
+    ['arabic', /[؀-ۿݐ-ݿࢠ-ࣿ]/],    // incl. Supplement, Extended-A
+    ['thai', /[฀-๿]/],
+    ['kana', /[぀-ヿ]/],
+    ['hangul', /[가-힣]/],
+    ['han', /[一-鿿]/],
+    ['devanagari', /[ऀ-ॿ]/],
+    ['cyrillic', /[Ѐ-ӿ]/],
+    ['greek', /[Ͱ-Ͽ]/],
+    ['hebrew', /[֐-׿]/],
+    ['latin', /[A-Za-zÀ-ɏ]/]
+];
+
+// The writing system a comment uses. This drives a UI hint and nothing else.
+//
+// 'unknown' means real letters in a script not listed above, kept distinct
+// from 'latin' so no caller can mistake an unrecognized script for text
+// already in the admin's language and skip translating it.
+export function detectScript(text) {
+    const value = String(text ?? '');
+    if (!value) return 'empty';
+
+    for (const [script, pattern] of SCRIPT_RANGES) {
+        if (pattern.test(value)) return script;
+    }
+
+    return needsTranslation(value) ? 'unknown' : 'empty';
 }
