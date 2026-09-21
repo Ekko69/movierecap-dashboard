@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import handler, { parseTranslationResponse, reconcile } from './translate.js';
+import handler, { parseTranslationResponse, reconcile, findEchoes } from './translate.js';
 
 test('parseTranslationResponse reads a clean JSON object', () => {
     const raw = '{"items":[{"id":"c1","lang":"my","text":"Please translate it"}]}';
@@ -105,10 +105,11 @@ function restoreEnv(name, value) {
     else process.env[name] = value;
 }
 
-// Answers the OpenAI call with a canned reply and leaves no Claude key, so the
-// handler's own logic is exercised without touching the network. Everything is
-// restored when the test ends.
-function stubOpenAI(t, items) {
+// Answers each OpenAI call with the next canned reply — the last one repeats —
+// and leaves no Claude key, so the handler's own logic runs without touching
+// the network. A reply that is an Error makes that call fail. Returns the
+// request bodies it received. Everything is restored when the test ends.
+function stubOpenAI(t, ...replies) {
     const saved = {
         fetch: globalThis.fetch,
         openai: process.env.OPENAI_API_KEY,
@@ -116,10 +117,18 @@ function stubOpenAI(t, items) {
     };
     process.env.OPENAI_API_KEY = 'test-key';
     delete process.env.ANTHROPIC_API_KEY;
-    globalThis.fetch = async () => ({
-        ok: true,
-        json: async () => ({ choices: [{ message: { content: JSON.stringify({ items }) } }] })
-    });
+    const calls = [];
+    globalThis.fetch = async (url, init) => {
+        calls.push(JSON.parse(init.body));
+        const reply = replies[Math.min(calls.length - 1, replies.length - 1)];
+        if (reply instanceof Error) {
+            return { ok: false, status: 429, json: async () => ({ error: { message: reply.message } }) };
+        }
+        return {
+            ok: true,
+            json: async () => ({ choices: [{ message: { content: JSON.stringify({ items: reply }) } }] })
+        };
+    };
     for (const level of ['info', 'warn', 'error']) t.mock.method(console, level, () => {});
 
     t.after(() => {
@@ -127,6 +136,7 @@ function stubOpenAI(t, items) {
         restoreEnv('OPENAI_API_KEY', saved.openai);
         restoreEnv('ANTHROPIC_API_KEY', saved.anthropic);
     });
+    return calls;
 }
 
 test('handler rejects more items than one batch may hold', async () => {
@@ -183,4 +193,88 @@ test('handler treats a reply with no usable ids as a failure', async (t) => {
 
     assert.equal(res.statusCode, 500);
     assert.match(res.body.error, /no usable items/);
+});
+
+test('findEchoes flags a foreign comment handed back unchanged', () => {
+    const requested = [
+        { id: 'a', text: 'ဘယ်လိုလုပ်ရမလဲး' },
+        { id: 'b', text: 'hi' },
+        { id: 'c', text: 'สวัสดี' }
+    ];
+    const translated = [
+        { id: 'a', lang: 'my', text: 'ဘယ်လိုလုပ်ရမလဲး' },   // never translated
+        { id: 'b', lang: 'en', text: 'hi' },               // English passes through
+        { id: 'c', lang: 'th', text: 'Hello' }             // a real translation
+    ];
+    assert.deepEqual(findEchoes(requested, translated, 'en').map((item) => item.id), ['a']);
+});
+
+test('findEchoes ignores surrounding whitespace', () => {
+    const echoes = findEchoes([{ id: 'a', text: ' ok ' }], [{ id: 'a', lang: 'my', text: 'ok' }], 'en');
+    assert.equal(echoes.length, 1);
+});
+
+test('handler retries an echoed comment alone and keeps the real translation', async (t) => {
+    // The first real run returned 23 Burmese comments untranslated from a
+    // batch; alone, each one translated.
+    const calls = stubOpenAI(t,
+        [{ id: 'a', lang: 'my', text: 'ဘယ်လိုလုပ်ရမလဲး' }, { id: 'b', lang: 'th', text: 'Hello' }],
+        [{ id: 'a', lang: 'my', text: 'What should I do?' }]
+    );
+    const res = fakeRes();
+    await handler({ method: 'POST', body: { items: [
+        { id: 'a', text: 'ဘယ်လိုလုပ်ရမလဲး' },
+        { id: 'b', text: 'สวัสดี' }
+    ] } }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.body.items, [
+        { id: 'a', lang: 'my', text: 'What should I do?' },
+        { id: 'b', lang: 'th', text: 'Hello' }
+    ]);
+    assert.deepEqual(res.body.missing, []);
+    // One batch call, then one retry carrying only the echoed comment.
+    assert.equal(calls.length, 2);
+    assert.match(calls[1].messages[1].content, /ဘယ်လိုလုပ်ရမလဲး/);
+    assert.doesNotMatch(calls[1].messages[1].content, /สวัสดี/);
+});
+
+test('handler accepts a comment still unchanged when asked alone', async (t) => {
+    // Names, links and keyboard noise have no translation. One retry, then the
+    // answer stands: retrying on every load would pay for nothing.
+    const calls = stubOpenAI(t, [{ id: 'a', lang: 'my', text: 'certyuiop' }]);
+    const res = fakeRes();
+    await handler({ method: 'POST', body: { items: [{ id: 'a', text: 'certyuiop' }] } }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.body.items, [{ id: 'a', lang: 'my', text: 'certyuiop' }]);
+    assert.deepEqual(res.body.missing, []);
+    assert.equal(calls.length, 2);
+});
+
+test('handler reports an echo as missing when its retry fails', async (t) => {
+    // Caching the echo would pass "unchanged" off as the translation. Missing
+    // means a later load tries again.
+    stubOpenAI(t,
+        [{ id: 'a', lang: 'my', text: 'ဘယ်လိုလုပ်ရမလဲး' }, { id: 'b', lang: 'th', text: 'Hello' }],
+        new Error('rate limited')
+    );
+    const res = fakeRes();
+    await handler({ method: 'POST', body: { items: [
+        { id: 'a', text: 'ဘယ်လိုလုပ်ရမလဲး' },
+        { id: 'b', text: 'สวัสดี' }
+    ] } }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.body.items, [{ id: 'b', lang: 'th', text: 'Hello' }]);
+    assert.deepEqual(res.body.missing, ['a']);
+});
+
+test('handler makes no retry when nothing was echoed', async (t) => {
+    const calls = stubOpenAI(t, [{ id: 'a', lang: 'th', text: 'Hello' }, { id: 'b', lang: 'en', text: 'hi' }]);
+    const res = fakeRes();
+    await handler({ method: 'POST', body: { items: [{ id: 'a', text: 'สวัสดี' }, { id: 'b', text: 'hi' }] } }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(calls.length, 1);
 });

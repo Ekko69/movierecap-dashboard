@@ -86,6 +86,16 @@ export function reconcile(requested, returned) {
     return { items, missing };
 }
 
+// An echo: the model named a comment's language as something other than the
+// target, then handed the text back unchanged — a translation that never
+// happened. Cached, it would leave that comment untranslated for good, and
+// look finished while doing it.
+export function findEchoes(requested, translated, targetLang) {
+    const original = new Map(requested.map((item) => [item.id, item.text.trim()]));
+    return translated.filter((item) =>
+        item.lang !== targetLang && item.text.trim() === original.get(item.id));
+}
+
 export default async function handler(req, res) {
     const requestId = `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -109,7 +119,6 @@ export default async function handler(req, res) {
     }
 
     const target = targetLang || 'en';
-    const prompt = buildPrompt(items, target);
 
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -126,8 +135,8 @@ export default async function handler(req, res) {
     if (OPENAI_API_KEY) {
         try {
             console.info('Translate request', { requestId, provider: 'openai', count: items.length });
-            const content = await callOpenAI({ prompt, apiKey: OPENAI_API_KEY });
-            const result = usableItems(items, content, requestId, 'openai');
+            const call = (prompt) => callOpenAI({ prompt, apiKey: OPENAI_API_KEY });
+            const result = await translateWith(call, items, target, requestId, 'openai');
             return res.status(200).json({ ...result, provider: 'openai' });
         } catch (error) {
             console.error('Translate: OpenAI failed, falling back to Claude', {
@@ -145,13 +154,61 @@ export default async function handler(req, res) {
     // Fallback: Claude
     try {
         console.info('Translate request', { requestId, provider: 'anthropic', count: items.length });
-        const content = await callClaude({ prompt, apiKey: ANTHROPIC_API_KEY });
-        const result = usableItems(items, content, requestId, 'anthropic');
+        const call = (prompt) => callClaude({ prompt, apiKey: ANTHROPIC_API_KEY });
+        const result = await translateWith(call, items, target, requestId, 'anthropic');
         return res.status(200).json({ ...result, provider: 'anthropic' });
     } catch (error) {
         console.error('Translate: Claude fallback also failed', { requestId, message: error.message });
         return res.status(500).json({ error: error.message, requestId });
     }
+}
+
+// One provider's whole answer for a batch: the batch reply, reconciled, with
+// any echoes retried. `call` takes a prompt and returns the model's text.
+async function translateWith(call, requested, target, requestId, provider) {
+    const content = await call(buildPrompt(requested, target));
+    const result = usableItems(requested, content, requestId, provider);
+    return retryEchoes(call, requested, result, target, requestId, provider);
+}
+
+// Batched, the model sometimes hands foreign comments back untranslated: 23 of
+// 82 Burmese comments on the first real run. Asked about the same comments one
+// at a time, it translated every real sentence. So each echo is retried once,
+// alone, and whatever comes back then is accepted — a comment still unchanged
+// with the model's full attention is a name, a link or keyboard noise, and
+// retrying it on every load would pay for nothing. A retry that fails outright
+// leaves the item missing, so a later load tries again rather than caching it
+// untranslated.
+async function retryEchoes(call, requested, result, target, requestId, provider) {
+    const echoes = findEchoes(requested, result.items, target);
+    if (echoes.length === 0) return result;
+
+    console.warn('Translate: retrying echoed items alone', { requestId, provider, count: echoes.length });
+    const byId = new Map(requested.map((item) => [item.id, item]));
+
+    const retried = await Promise.all(echoes.map(async (echo) => {
+        const single = [byId.get(echo.id)];
+        try {
+            const content = await call(buildPrompt(single, target));
+            return reconcile(single, parseTranslationResponse(content)).items[0] || null;
+        } catch {
+            return null;
+        }
+    }));
+
+    const replacements = new Map();
+    const failed = new Set();
+    echoes.forEach((echo, index) => {
+        if (retried[index]) replacements.set(echo.id, retried[index]);
+        else failed.add(echo.id);
+    });
+
+    return {
+        items: result.items
+            .filter((item) => !failed.has(item.id))
+            .map((item) => replacements.get(item.id) || item),
+        missing: [...result.missing, ...failed]
+    };
 }
 
 // One provider's reply, parsed and reconciled against what was asked for. A
