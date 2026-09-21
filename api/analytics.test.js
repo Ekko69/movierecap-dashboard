@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { createHandler, readServiceAccount } from './analytics.js';
 
 const EMAIL = 'dashboard-analytics@movie-recap-1306e.iam.gserviceaccount.com';
-const KEY = Buffer.from(JSON.stringify({ client_email: EMAIL, private_key: 'fake-key' })).toString('base64');
+const PEM = '-----BEGIN PRIVATE KEY-----\nZmFrZQ==\n-----END PRIVATE KEY-----\n';
+const KEY = Buffer.from(JSON.stringify({ client_email: EMAIL, private_key: PEM })).toString('base64');
 const ENV = { GA_PROPERTY_ID: '123456789', GA_SERVICE_ACCOUNT_KEY: KEY };
 const ALL_DIMS = ['customEvent:movie_title', 'customEvent:item_name', 'customEvent:category_name'];
 
@@ -56,7 +57,7 @@ test('readServiceAccount returns null when nothing is configured', () => {
 });
 
 test('readServiceAccount decodes the base64 key', () => {
-    assert.deepEqual(readServiceAccount(ENV), { propertyId: '123456789', email: EMAIL, privateKey: 'fake-key' });
+    assert.deepEqual(readServiceAccount(ENV), { propertyId: '123456789', email: EMAIL, privateKey: PEM });
 });
 
 test('readServiceAccount explains a measurement id given as the property id', () => {
@@ -88,6 +89,7 @@ test('handler says when it is not configured, without calling GA', async () => {
     await createHandler({ getAccessToken, fetch: ga.fetch, env: {} })(get('28'), res);
     assert.equal(res.statusCode, 503);
     assert.equal(res.body.error, 'not_configured');
+    assert.equal(res.headers['cache-control'], 'no-store');
     assert.equal(ga.calls.length, 0);
 });
 
@@ -145,7 +147,8 @@ test('handler names the service account when GA denies access', async () => {
     const res = fakeRes();
     await createHandler({ getAccessToken, fetch: ga.fetch, env: ENV })(get('28'), res);
     assert.equal(res.statusCode, 403);
-    assert.deepEqual(res.body, { error: 'no_access', serviceAccount: EMAIL });
+    assert.deepEqual(res.body, { error: 'no_access', serviceAccount: EMAIL, detail: 'User does not have sufficient permissions' });
+    assert.equal(res.headers['cache-control'], 'no-store');
 });
 
 test('handler passes on any other GA failure', async () => {
@@ -164,4 +167,32 @@ test('handler reports a failure to get a token as a GA failure', async () => {
     await createHandler({ getAccessToken: failing, fetch: fakeGa().fetch, env: ENV })(get('28'), res);
     assert.equal(res.statusCode, 502);
     assert.match(res.body.detail, /invalid_grant/);
+});
+
+test('readServiceAccount explains a key file with no PEM private key', () => {
+    const notPem = Buffer.from(JSON.stringify({ client_email: EMAIL, private_key: 'not-a-key' })).toString('base64');
+    assert.throws(() => readServiceAccount({ ...ENV, GA_SERVICE_ACCOUNT_KEY: notPem }), /PEM private key/);
+});
+
+test('handler passes on why GA refused, so a disabled API is not mistaken for missing access', async () => {
+    const ga = fakeGa({ status: 403, error: { code: 403, message: 'Google Analytics Data API has not been used in project 123 before or it is disabled.' } });
+    const res = fakeRes();
+    await createHandler({ getAccessToken, fetch: ga.fetch, env: ENV })(get('28'), res);
+    assert.equal(res.statusCode, 403);
+    assert.match(res.body.detail, /has not been used/);
+});
+
+test('handler never echoes the configured key in a response', async () => {
+    // The endpoint is public; the key must never leave the server.
+    const secretKey = Buffer.from(JSON.stringify({ client_email: EMAIL, private_key: 'SECRET-KEY-MATERIAL' })).toString('base64');
+    for (const env of [
+        { ...ENV, GA_SERVICE_ACCOUNT_KEY: 'not base64 json SECRET' },
+        { ...ENV, GA_SERVICE_ACCOUNT_KEY: secretKey }
+    ]) {
+        const res = fakeRes();
+        await createHandler({ getAccessToken, fetch: fakeGa().fetch, env })(get('28'), res);
+        const body = JSON.stringify(res.body);
+        assert.doesNotMatch(body, /SECRET/);
+        assert.ok(!body.includes(env.GA_SERVICE_ACCOUNT_KEY));
+    }
 });

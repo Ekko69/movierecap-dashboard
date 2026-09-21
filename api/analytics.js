@@ -15,10 +15,9 @@ const SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
 const METADATA_TTL_MS = 60 * 60 * 1000;
 
 class GaError extends Error {
-    constructor(status, gaStatus, message) {
+    constructor(status, message) {
         super(message || `Google Analytics error ${status}`);
         this.status = status;
-        this.gaStatus = gaStatus;
     }
 }
 
@@ -44,6 +43,11 @@ export function readServiceAccount(env) {
     if (!key?.client_email || !key?.private_key) {
         throw new Error('GA_SERVICE_ACCOUNT_KEY is missing client_email or private_key — is it the right key file?');
     }
+    // A malformed key would otherwise surface on the first request as an
+    // OpenSSL decoder error, which says nothing about what to fix.
+    if (!/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(key.private_key)) {
+        throw new Error('GA_SERVICE_ACCOUNT_KEY holds no PEM private key — download a new JSON key for the service account.');
+    }
     return { propertyId, email: key.client_email, privateKey: key.private_key };
 }
 
@@ -57,7 +61,7 @@ export function createHandler({ getAccessToken, fetch, env = process.env }) {
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-            throw new GaError(response.status, data?.error?.status, data?.error?.message);
+            throw new GaError(response.status, data?.error?.message);
         }
         return data;
     }
@@ -111,9 +115,11 @@ export function createHandler({ getAccessToken, fetch, env = process.env }) {
             res.setHeader('Cache-Control', 's-maxage=900, stale-while-revalidate=3600');
             return res.status(200).json(shapeAnalytics({ days, params, reports, responses }));
         } catch (error) {
-            if (error instanceof GaError && (error.status === 403 || error.gaStatus === 'PERMISSION_DENIED')) {
-                // The fix is adding exactly this email to the property.
-                return fail(403, { error: 'no_access', serviceAccount: account.email });
+            if (error instanceof GaError && error.status === 403) {
+                // Usually the fix is adding exactly this email to the property.
+                // But a disabled API or a wrong property ID also comes back as
+                // 403, so GA's own message goes along to tell them apart.
+                return fail(403, { error: 'no_access', serviceAccount: account.email, detail: error.message });
             }
             console.error('Analytics: request failed', { message: error.message });
             return fail(502, { error: 'ga_error', detail: error.message });
@@ -121,14 +127,17 @@ export function createHandler({ getAccessToken, fetch, env = process.env }) {
     };
 }
 
-// One client per warm instance; it caches its token until it expires.
+// One client per warm instance; it caches its token until it expires. It is
+// rebuilt when the key changes, not just the email: a rotated key keeps the
+// same service account address.
 let jwtClient = null;
-let jwtEmail = null;
+let jwtIdentity = null;
 
 async function googleAccessToken(account) {
-    if (!jwtClient || jwtEmail !== account.email) {
+    const identity = `${account.email}\n${account.privateKey}`;
+    if (!jwtClient || jwtIdentity !== identity) {
         jwtClient = new JWT({ email: account.email, key: account.privateKey, scopes: [SCOPE] });
-        jwtEmail = account.email;
+        jwtIdentity = identity;
     }
     const { token } = await jwtClient.getAccessToken();
     if (!token) throw new Error('Google returned no access token');
