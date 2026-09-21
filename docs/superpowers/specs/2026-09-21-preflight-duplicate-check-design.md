@@ -49,8 +49,19 @@ Alternatives rejected:
   title is not known until after transcription, which is precisely the cost this
   feature exists to avoid.
 
-`findMovieByVideoId(videoId)` wraps the lookup, mirroring the existing
-`findDuplicateMovie(title, year)` (app.js:368).
+Two lookups wrap it, because the form and the bulk importer need different
+contracts:
+
+| Function | Contract |
+|---|---|
+| `findMovieByVideoId(videoId)` | Exempts the movie currently being edited, mirroring `findDuplicateMovie(title, year)`. Used by the three form entry points, so re-fetching a movie's own URL while editing it is not blocked |
+| `findImportedMovieByVideoId(videoId)` | No exemption. Used by the bulk importer |
+
+The split is load-bearing. The Bulk YouTube tab lives *inside* the movie form and
+`setSourceMode` has no `editingMovieId` guard, so a bulk run can start with a
+movie still open for editing. Sharing the exempting lookup would let that one
+movie be re-imported in full — the exact outcome this feature exists to prevent,
+on the most expensive path.
 
 ### 2. Where the check fires
 
@@ -90,8 +101,21 @@ and two actions.
 
 | Action | Behaviour |
 |---|---|
-| Open existing | `openForm(match)` — same as the title/year banner's equivalent |
-| Import anyway | Records the video id in `overriddenVideoId` and hides the banner. That one id stops being blocked for the rest of the session |
+| Open existing | `openForm(match)`, behind `confirmLeavingFormForMovie()` — shared with the title/year banner, so neither can drift from the other's guards |
+| Import anyway | Records the video id the banner was **raised for** in `overriddenVideoId` and hides the banner |
+
+Two details the guards exist for:
+
+- **The override remembers the id it warned about**, not whatever is in the URL
+  field when the button is clicked. The field can be edited after the banner
+  appears, and exempting an id the user was never warned about would let a
+  different duplicate straight through. An `input` listener also hides the banner
+  as soon as the URL changes, so a stale banner can never be acted on.
+- **Opening the existing movie is guarded.** `openForm` runs `resetMediaInputs()`,
+  which clears `currentSourceURL` and mutates `editingMovieId`. Doing that during
+  an in-flight save would make the movie being saved land with no `sourceURL` —
+  permanently invisible to this very index — so the shared guard refuses while
+  `isSavingMovie`, and confirms before discarding a video already in the form.
 
 The override exists because re-importing deliberately is legitimate — redoing a
 botched import should not require deleting the existing record first. It cannot
@@ -113,6 +137,16 @@ Bulk import complete: 12 imported, 0 failed, 3 skipped as duplicates.
 No `movieId` is minted, nothing is written to Firebase or Storage, and no
 download slot is consumed. `skipped` is distinct from `failed` — nothing went
 wrong.
+
+**`runQueue` has to cooperate.** It wraps each worker and, on resolve, sets
+`item.status = 'completed'` unconditionally. A worker that settles its own status
+and returns normally — which is exactly what the skip does — would have that
+status overwritten, so a skipped row would render a green "Completed" badge above
+its own "Already imported as ..." line, and the skipped count would always be
+zero while `imported` overcounted. `runQueue` therefore only claims completion
+when the worker has not already marked the item `skipped`. `runQueue` is shared
+with the local-file batch path, which never sets that status, so the guard is
+inert there.
 
 The existing post-transcription `wasDuplicate` title/year flag stays exactly as
 it is. It remains the only thing that can catch a collision with a movie that has
