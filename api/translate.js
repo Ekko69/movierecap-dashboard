@@ -134,6 +134,12 @@ export default async function handler(req, res) {
     }
 
     const target = targetLang || 'en';
+    // It goes into the prompt, so only a bare language code is accepted. The
+    // dashboard only ever sends 'en' or a code parseTranslationResponse has
+    // already normalized to this shape.
+    if (!/^[a-z]{2,3}$/.test(target)) {
+        return res.status(400).json({ error: 'targetLang must be a 2- or 3-letter language code' });
+    }
 
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -245,9 +251,20 @@ function usableItems(requested, content, requestId, provider) {
     return { items, missing };
 }
 
+const languageNames = new Intl.DisplayNames(['en'], { type: 'language' });
+
+// The target is named, not just coded. Asked to translate into "my" — the ISO
+// code for Burmese, and also an ordinary English word — the model handed the
+// English back unchanged, even when retried alone, while the identical request
+// with "ar" translated fine. "Burmese" leaves nothing to misread.
+function describeLanguage(code) {
+    const name = languageNames.of(code);
+    return name && name !== code ? `${name} (ISO 639-1 "${code}")` : code;
+}
+
 function buildPrompt(items, targetLang) {
     const payload = items.map(item => ({ id: item.id, text: item.text }));
-    return `Target language: ${targetLang}\n\nComments:\n${JSON.stringify(payload, null, 1)}`;
+    return `Target language: ${describeLanguage(targetLang)}\n\nComments:\n${JSON.stringify(payload, null, 1)}`;
 }
 
 async function callOpenAI({ prompt, apiKey }) {
