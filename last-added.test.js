@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { youtubeWatchURL, youtubeThumbnailURL, formatRelativeTime, pickLastAdded } from './last-added.js';
+import { youtubeWatchURL, youtubeThumbnailURL, formatRelativeTime, pickLastAdded, videoIdFromSourceURL } from './last-added.js';
 
 test('youtubeWatchURL builds a canonical watch URL', () => {
     assert.equal(
@@ -129,4 +129,33 @@ test('youtubeThumbnailURL returns null when there is no usable source', () => {
 test('youtubeThumbnailURL refuses a non-https source', () => {
     // The result goes straight into an <img src>, so no javascript:/data: input.
     assert.equal(youtubeThumbnailURL('javascript:alert(1)//watch?v=trjp0T-eW6Q'), null);
+});
+
+test('videoIdFromSourceURL reads the id out of a stored source URL', () => {
+    assert.equal(
+        videoIdFromSourceURL('https://www.youtube.com/watch?v=trjp0T-eW6Q'),
+        'trjp0T-eW6Q'
+    );
+});
+
+test('videoIdFromSourceURL ignores trailing parameters', () => {
+    assert.equal(
+        videoIdFromSourceURL('https://www.youtube.com/watch?v=trjp0T-eW6Q&t=42s'),
+        'trjp0T-eW6Q'
+    );
+});
+
+test('videoIdFromSourceURL accepts the no-www form', () => {
+    assert.equal(
+        videoIdFromSourceURL('https://youtube.com/watch?v=trjp0T-eW6Q'),
+        'trjp0T-eW6Q'
+    );
+});
+
+test('videoIdFromSourceURL returns null for anything else', () => {
+    assert.equal(videoIdFromSourceURL(null), null);
+    assert.equal(videoIdFromSourceURL(''), null);
+    assert.equal(videoIdFromSourceURL(undefined), null);
+    assert.equal(videoIdFromSourceURL('https://firebasestorage.googleapis.com/x.mp4'), null);
+    assert.equal(videoIdFromSourceURL('http://www.youtube.com/watch?v=trjp0T-eW6Q'), null);
 });

@@ -10,21 +10,29 @@ export function youtubeWatchURL(videoId) {
     return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
 }
 
+// The video id inside a stored sourceURL, or null if there isn't one.
+//
+// Anchored to https and to the canonical watch shape the write paths produce.
+// Everything downstream — an <img src>, an <a href>, a duplicate lookup key —
+// trusts this to have rejected anything else.
+export function videoIdFromSourceURL(sourceURL) {
+    if (!sourceURL) return null;
+    const match = String(sourceURL).match(
+        /^https:\/\/(?:www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/
+    );
+    return match ? match[1] : null;
+}
+
 // The video's own thumbnail on YouTube, derived from a stored sourceURL.
 //
 // mqdefault rather than maxresdefault: maxres is absent for a great many videos
 // and would 404 into a broken image, while mqdefault always exists and is
 // natively 16:9 (hqdefault is 4:3 and arrives letterboxed). At 320x180 it is
 // ample for the panel's 120x68 slot, even on a 2x display.
-//
-// Anchored to https so the result is safe to hand straight to an <img src>.
 export function youtubeThumbnailURL(sourceURL) {
-    if (!sourceURL) return null;
-    const match = String(sourceURL).match(
-        /^https:\/\/(?:www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/
-    );
-    if (!match) return null;
-    return `https://i.ytimg.com/vi/${match[1]}/mqdefault.jpg`;
+    const videoId = videoIdFromSourceURL(sourceURL);
+    if (!videoId) return null;
+    return `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
 }
 
 const SECOND_MS = 1000;
