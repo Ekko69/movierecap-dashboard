@@ -1515,7 +1515,7 @@ for (const [name, view] of Object.entries(VIEWS)) {
 - [ ] **Step 4: Check syntax and tests**
 
 Run: `node --check app.js && npm test`
-Expected: no syntax error; 168 passing.
+Expected: no syntax error; 172 passing.
 
 - [ ] **Step 5: Check all three views in the browser**
 
@@ -2223,7 +2223,7 @@ const analyticsView = initAnalyticsView({
 - [ ] **Step 4: Check syntax and tests**
 
 Run: `node --check app.js && node --check analytics-view.js && npm test`
-Expected: no syntax errors; 168 passing.
+Expected: no syntax errors; 172 passing.
 
 - [ ] **Step 5: Check the not-configured state in the browser**
 
@@ -2454,7 +2454,7 @@ In `audienceSection`, replace the final `section.append(tiles);\n    return sect
 - [ ] **Step 3: Check syntax and tests**
 
 Run: `node --check analytics-view.js && npm test`
-Expected: no syntax error; 168 passing.
+Expected: no syntax error; 172 passing.
 
 - [ ] **Step 4: Check the chart in the browser with the fixture**
 
@@ -2614,7 +2614,7 @@ In `buildReport`, after `parts.push(audienceSection(data.audience));`, add:
 - [ ] **Step 3: Check syntax and tests**
 
 Run: `node --check analytics-view.js && npm test`
-Expected: no syntax error; 168 passing.
+Expected: no syntax error; 172 passing.
 
 - [ ] **Step 4: Check the table in the browser with the fixture**
 
@@ -2721,7 +2721,7 @@ In `buildReport`, after the `movieSection` line, add:
 - [ ] **Step 3: Check syntax and tests**
 
 Run: `node --check analytics-view.js && npm test`
-Expected: no syntax error; 168 passing.
+Expected: no syntax error; 172 passing.
 
 - [ ] **Step 4: Check the bars in the browser with the fixture**
 
@@ -2743,7 +2743,7 @@ git commit -m "feat: show categories and devices as ranked bars"
 - [ ] **Step 1: Run the whole suite**
 
 Run: `npm test`
-Expected: 168 passing, 0 failing.
+Expected: 172 passing, 0 failing.
 
 - [ ] **Step 2: Walk the section with the fixture**
 
