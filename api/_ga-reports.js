@@ -136,3 +136,106 @@ export function toBatches(reports, size = BATCH_LIMIT) {
     }
     return batches;
 }
+
+// A report's rows as plain values. GA sends every metric as a string.
+export function parseRows(report) {
+    const rows = Array.isArray(report?.rows) ? report.rows : [];
+    return rows.map((row) => ({
+        dims: (row?.dimensionValues || []).map((value) => String(value?.value ?? '')),
+        values: (row?.metricValues || []).map((value) => Number(value?.value) || 0)
+    }));
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// "20260901" as a UTC timestamp, and back again as "2026-09-01".
+const fromGaDate = (text) => Date.UTC(Number(text.slice(0, 4)), Number(text.slice(4, 6)) - 1, Number(text.slice(6, 8)));
+const toIsoDate = (ms) => new Date(ms).toISOString().slice(0, 10);
+
+// Daily active users, one point per day. GA omits days with no rows, and a line
+// drawn straight across a missing day shows activity that never happened, so
+// every day between the first and last becomes a point.
+export function fillDaily(rows) {
+    const byDay = new Map();
+    for (const row of rows) {
+        const text = row.dims[0];
+        if (/^\d{8}$/.test(text)) byDay.set(fromGaDate(text), row.values[0] || 0);
+    }
+    if (byDay.size === 0) return [];
+
+    const days = [...byDay.keys()].sort((a, b) => a - b);
+    const points = [];
+    for (let day = days[0]; day <= days[days.length - 1]; day += DAY_MS) {
+        points.push({ date: toIsoDate(day), activeUsers: byDay.get(day) || 0 });
+    }
+    return points;
+}
+
+// Rows with no usable value: events logged before a dimension was registered
+// come back as "(not set)".
+const isUnset = (value) => value === '' || value === '(not set)';
+
+// {name: count} from single-dimension rows, summing any repeats.
+function countBy(rows) {
+    const counts = {};
+    for (const row of rows) {
+        const name = row.dims[0];
+        if (isUnset(name)) continue;
+        counts[name] = (counts[name] || 0) + (row.values[0] || 0);
+    }
+    return counts;
+}
+
+// {name: count} for one event, from rows of [eventName, key].
+function countEvent(rows, eventName) {
+    return countBy(rows.filter((row) => row.dims[0] === eventName).map((row) => ({
+        dims: [row.dims[1]],
+        values: row.values
+    })));
+}
+
+const ranked = (rows, field) => rows.map((row) => ({ name: row.dims[0], [field]: row.values[0] || 0 }));
+
+// The endpoint's response, from the reports buildReports made and the
+// responses GA returned for them, in the same order.
+export function shapeAnalytics({ days, params, reports, responses }) {
+    const byName = new Map(reports.map((report, index) => [report.name, responses[index]]));
+    const rows = (name) => parseRows(byName.get(name));
+    const keys = movieKeys(params);
+
+    const [totals = 0, newUsers = 0, sessions = 0, engagement = 0] = rows('totals')[0]?.values || [];
+    const playRows = rows('plays');
+
+    const metadata = [...byName.values()].map((response) => response?.metadata || {});
+
+    return {
+        range: days,
+        audience: {
+            activeUsers: totals,
+            newUsers,
+            sessions,
+            engagementSeconds: engagement,
+            daily: fillDaily(rows('daily'))
+        },
+        where: {
+            countries: ranked(rows('countries'), 'users'),
+            languages: ranked(rows('languages'), 'users'),
+            osVersions: ranked(rows('osVersions'), 'users'),
+            appVersions: ranked(rows('appVersions'), 'users')
+        },
+        movies: keys.plays ? {
+            key: keys.key,
+            clicks: keys.clicks ? countBy(rows('clicks')) : null,
+            plays: countEvent(playRows, 'video_start'),
+            completes: countEvent(playRows, 'video_complete')
+        } : null,
+        categories: params.has('category_name')
+            ? ranked(rows('categories').filter((row) => !isUnset(row.dims[0])), 'views')
+            : null,
+        missingDimensions: missingDimensions(params),
+        notes: {
+            thresholded: metadata.some((entry) => entry.subjectToThresholding === true),
+            otherRow: metadata.some((entry) => entry.dataLossFromOtherRow === true)
+        }
+    };
+}
