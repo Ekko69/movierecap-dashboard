@@ -326,3 +326,23 @@ test('formatAdminReply posts the original alone when there is nothing to add', (
 test('formatAdminReply trims surrounding whitespace', () => {
     assert.equal(formatAdminReply('  ABC  ', '  xyz  '), 'ABC\n—\nxyz');
 });
+
+test('batchItems rejects a size that is not a whole number', () => {
+    const items = [{ id: 'a', text: 'x' }];
+    // NaN slid past a `size < 1` guard and silently returned zero items.
+    assert.throws(() => batchItems(items, NaN), /at least 1/);
+    assert.throws(() => batchItems(items, 2.5), /at least 1/);
+    assert.throws(() => batchItems(items, Infinity), /at least 1/);
+});
+
+test('batchItems handles a size of one', () => {
+    const items = Array.from({ length: 3 }, (_, i) => ({ id: `c${i}`, text: 'x' }));
+    assert.deepEqual(batchItems(items, 1).map(b => b.length), [1, 1, 1]);
+});
+
+test('collectTranslatable is not fooled by an id that names an Object method', () => {
+    // cache is a plain object straight from Firebase, and cache['constructor']
+    // is truthy on any object — which would silently skip this item.
+    const rows = [{ id: 'constructor', text: 'hello', isAdmin: false, replies: [] }];
+    assert.deepEqual(collectTranslatable(rows, {}), [{ id: 'constructor', text: 'hello' }]);
+});
