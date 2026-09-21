@@ -100,6 +100,7 @@ function createQueueItem(videoId) {
         usedAiThumbnail: false,
         thumbnailNote: null,
         wasDuplicate: false,
+        skipReason: null,
         movieId: null,
         videoUrl: null,
         metadata: null
@@ -164,13 +165,15 @@ const BULK_STATUS_LABELS = {
     'omdb-done': 'Details enhanced',
     saving: 'Saving',
     completed: 'Completed',
-    failed: 'Failed'
+    failed: 'Failed',
+    skipped: 'Skipped'
 };
 
 function statusCategory(status) {
     if (!status || status === 'queued') return 'queued';
     if (status === 'completed') return 'completed';
     if (status === 'failed') return 'failed';
+    if (status === 'skipped') return 'skipped';
     return 'processing';
 }
 
@@ -238,6 +241,13 @@ function renderQueue() {
                 statusWrap.appendChild(errorEl);
             }
 
+            if (item.skipReason) {
+                const skipEl = document.createElement('span');
+                skipEl.className = 'batch-item-error';
+                skipEl.textContent = item.skipReason;
+                statusWrap.appendChild(skipEl);
+            }
+
             // A thumbnail that fell back is not a failed import, but the row
             // should still say so rather than quietly looking like a success.
             if (item.thumbnailNote) {
@@ -254,11 +264,14 @@ function renderQueue() {
 
     const completed = queue.filter(i => i.status === 'completed').length;
     const failed = queue.filter(i => i.status === 'failed').length;
+    const skipped = queue.filter(i => i.status === 'skipped').length;
     const hasQueued = queue.some(i => i.status === 'queued');
 
     if (progressBar) {
+        // Skipped rows are settled too — leaving them out strands the bar below
+        // 100% for any run containing a duplicate.
         const pct = queue.length
-            ? Math.round(((completed + failed) / queue.length) * 100)
+            ? Math.round(((completed + failed + skipped) / queue.length) * 100)
             : 0;
         progressBar.style.width = `${pct}%`;
     }
@@ -356,6 +369,16 @@ async function resolveThumbnailBlob(item) {
 }
 
 async function processBulkItem(item) {
+    // Before withDownloadSlot, so a duplicate costs nothing: no info fetch, no
+    // download slot, no upload, no transcription, and no movieId is minted.
+    const alreadyImported = deps.findMovieByVideoId(item.videoId);
+    if (alreadyImported) {
+        item.status = 'skipped';
+        item.skipReason = `Already imported as "${alreadyImported.title}"`;
+        renderQueue();
+        return;
+    }
+
     const quality = qualitySelect?.value || '360p';
 
     const file = await withDownloadSlot(async () => {
@@ -408,9 +431,17 @@ async function runBulkImport() {
 
     const completed = queue.filter(i => i.status === 'completed').length;
     const failed = queue.filter(i => i.status === 'failed').length;
+    const skipped = queue.filter(i => i.status === 'skipped').length;
     const duplicates = queue.filter(i => i.status === 'completed' && i.wasDuplicate).length;
 
-    let message = `Bulk import complete: ${completed} imported, ${failed} failed.`;
+    let message = `Bulk import complete: ${completed} imported, ${failed} failed`;
+    if (skipped) {
+        message += `, ${skipped} skipped as duplicate${skipped === 1 ? '' : 's'}`;
+    }
+    message += '.';
+    // A row that got all the way through and only then looked like a duplicate —
+    // matched on title and year, the pre-flight check having found no sourceURL
+    // to match on. Different thing from a skip, so reported separately.
     if (duplicates) {
         message += ` (${duplicates} possible duplicate${duplicates === 1 ? '' : 's'})`;
     }
