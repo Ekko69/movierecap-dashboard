@@ -289,9 +289,16 @@ function movieSection(data, library, commentRows) {
         if (clickParams.length) card.append(missingNote(clickParams, 'Clicks'));
     }
 
-    card.append(rows.length ? movieTable(rows, hasClicks) : el('p', 'analytics-empty', 'No plays in this period.'));
-    card.append(el('p', 'analytics-footnote',
-        "Plays can count twice when a viewer switches to fullscreen — a quirk in the app's logging — which also pulls completion rates down."));
+    if (rows.length) {
+        card.append(movieTable(rows, hasClicks));
+        card.append(el('p', 'analytics-footnote',
+            "Plays can count twice when a viewer switches to fullscreen — a quirk in the app's logging — which also pulls completion rates down."));
+    } else {
+        // GA breaks events down by title only from the day the dimension is
+        // registered, so an empty table is more often a new setup than a quiet period.
+        card.append(el('p', 'analytics-empty',
+            'No plays by title in this period. Google counts plays per title only from the day the movie dimensions were registered in GA4, so a new setup takes a day or two to fill in.'));
+    }
 
     if (neverPlayed.length) {
         card.append(titleList(
@@ -338,7 +345,8 @@ function categorySection(data) {
     if (!data.categories) {
         card.append(missingNote(['category_name'], 'Category views'));
     } else if (!data.categories.length) {
-        card.append(el('p', 'analytics-empty', 'No category views in this period.'));
+        card.append(el('p', 'analytics-empty',
+            'No category views in this period. Google counts views per category only from the day category_name was registered in GA4.'));
     } else {
         card.append(el('h4', 'chart-title', 'Opened from the Home screen'));
         card.append(barList(data.categories.map((category) => ({ name: category.name, value: category.views })), 'views'));

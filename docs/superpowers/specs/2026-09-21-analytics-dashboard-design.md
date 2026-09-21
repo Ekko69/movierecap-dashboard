@@ -52,10 +52,12 @@ a parameter only after it is registered as an event-scoped custom dimension in G
 registration is not retroactive: breakdowns exist from the day it is done. Audience and device
 figures are built in and cover the full history regardless.
 
-**The titles are already registered** (`movie_title` and/or `item_name`), so they carry history;
-the ids are not. Movies are therefore matched to the library **by title**. The endpoint still
-checks at runtime which dimensions exist, and falls back to ids only where no title dimension is
-registered.
+**The titles are registered, from 2026-09-21.** It was assumed during design that `movie_title`
+and `item_name` were registered already; at setup the property (517601859) had no custom
+dimensions at all, so `movie_title`, `item_name` and `category_name` were registered on
+2026-09-21 and per-movie figures start from that day. The ids are not registered. Movies are
+therefore matched to the library **by title**. The endpoint still checks at runtime which
+dimensions exist, and falls back to ids only where no title dimension is registered.
 
 **35 titles appear twice in the library** (70 movies), and 8 titles carry stray leading or
 trailing spaces, as of 2026-09-21. GA records only the title, so for a shared title it holds one
@@ -219,10 +221,10 @@ Needed once, in the Google consoles:
    `dashboard-analytics`) with no project roles → Keys → Add key → JSON. Download it.
 4. **Grant read access.** GA4 → Admin → Property access management → add the service account's
    email with the **Viewer** role. Viewer can read reports and nothing else.
-5. **Custom dimensions.** `movie_title` and/or `item_name` are already registered. If the section
-   reports anything missing — most likely `category_name` — register it under GA4 → Admin →
-   Custom definitions → Create custom dimension, scope **Event**. Registration is not
-   retroactive, so sooner is better.
+5. **Custom dimensions.** Register `movie_title`, `item_name` and `category_name` under GA4 →
+   Admin → Data display → Custom definitions → Create custom dimension, scope **Event**. Done
+   on 2026-09-21. Registration is not retroactive, so an empty movie table in the first days
+   is expected, and the view says so.
 6. **Configure.** Set `GA_PROPERTY_ID` to the number, and `GA_SERVICE_ACCOUNT_KEY` to the key
    file base64-encoded on one line (`base64 -i key.json | tr -d '\n'`). In `.env` locally, and in
    the Vercel project's environment variables.
