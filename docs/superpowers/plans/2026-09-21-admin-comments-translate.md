@@ -42,6 +42,8 @@ comments/{movieId}/{pushId}/   → movieId, text, timestamp, userName
 - Create: `comments.js`
 - Create: `comments.test.js`
 
+**Design note — script is not language.** `detectScript` names a *writing system*, never a language. Persian and Urdu are written in Arabic script; Ukrainian and Bulgarian in Cyrillic; Japanese in a mix of kana and han. Returning `'ar'` for Persian text would invite using it as a translation target and reply to a Persian speaker in Arabic, confidently and wrongly. The translation target always comes from the language the model detects and stores, never from this function.
+
 - [ ] **Step 1: Write the failing test**
 
 Create `comments.test.js`:
@@ -52,23 +54,66 @@ import assert from 'node:assert/strict';
 
 import { detectScript, needsTranslation, TARGET_LANG, ADMIN_NAME } from './comments.js';
 
-test('detectScript identifies the scripts present in the live data', () => {
-    assert.equal(detectScript('ဘာသာပြန်ပေးပါ'), 'my');
-    assert.equal(detectScript('انشئ لي فيلم مغربي'), 'ar');
-    assert.equal(detectScript('สวัสดี'), 'th');
+test('detectScript names the scripts present in the live data', () => {
+    assert.equal(detectScript('ဘာသာပြန်ပေးပါ'), 'myanmar');
+    assert.equal(detectScript('انشئ لي فيلم مغربي'), 'arabic');
+    assert.equal(detectScript('สวัสดี'), 'thai');
     assert.equal(detectScript('how can download this video?'), 'latin');
 });
 
-test('detectScript prefers kana over han for Japanese text', () => {
-    // Japanese mixes kana with han characters; kana is the deciding signal.
-    assert.equal(detectScript('これは映画です'), 'ja');
-    assert.equal(detectScript('电影'), 'zh');
+test('detectScript covers the remaining listed scripts', () => {
+    // Every branch is exercised: a swapped or typo'd range would otherwise
+    // reach production unnoticed.
+    assert.equal(detectScript('안녕하세요'), 'hangul');
+    assert.equal(detectScript('नमस्ते'), 'devanagari');
+    assert.equal(detectScript('Привет'), 'cyrillic');
+    assert.equal(detectScript('Καλημέρα'), 'greek');
+    assert.equal(detectScript('שלום'), 'hebrew');
 });
 
-test('detectScript reports empty for text with nothing in it', () => {
+test('detectScript prefers kana over han for Japanese text', () => {
+    // Japanese mixes kana with han characters; kana is the deciding signal,
+    // so this only passes while kana is checked first.
+    assert.equal(detectScript('これは映画です'), 'kana');
+    assert.equal(detectScript('电影'), 'han');
+});
+
+test('detectScript names the script, never the language', () => {
+    // Persian is written in Arabic script and Ukrainian in Cyrillic. Reporting
+    // 'arabic' and 'cyrillic' keeps callers from treating these as language
+    // codes and translating a reply into the wrong language entirely.
+    assert.equal(detectScript('سلام خوبی'), 'arabic');
+    assert.equal(detectScript('Привіт, як справи?'), 'cyrillic');
+});
+
+test('detectScript prefers a non-latin script in mixed text', () => {
+    // The part that needs translating decides.
+    assert.equal(detectScript('ok ဘာသာပြန်ပေးပါ'), 'myanmar');
+});
+
+test('detectScript distinguishes an unrecognized script from latin', () => {
+    // Real letters in a script not listed. It must NOT come back as 'latin',
+    // or a caller would read it as "already in the admin's language".
+    assert.equal(detectScript('አማርኛ'), 'unknown');      // Amharic
+    assert.equal(detectScript('ქართული'), 'unknown');    // Georgian
+});
+
+test('detectScript reports empty when there is no language present', () => {
     assert.equal(detectScript(''), 'empty');
     assert.equal(detectScript(null), 'empty');
     assert.equal(detectScript(undefined), 'empty');
+    assert.equal(detectScript('💜'), 'empty');
+    assert.equal(detectScript('!!!'), 'empty');
+    assert.equal(detectScript('123'), 'empty');
+});
+
+test('detectScript and needsTranslation agree on non-string input', () => {
+    // Firebase should never hand these back, but the two functions must not
+    // disagree about the same value.
+    assert.equal(detectScript([]), 'empty');
+    assert.equal(needsTranslation([]), false);
+    assert.equal(detectScript(42), 'empty');
+    assert.equal(needsTranslation(42), false);
 });
 
 test('needsTranslation is false for text carrying no letters', () => {
@@ -85,6 +130,7 @@ test('needsTranslation is true for any text containing letters', () => {
     assert.equal(needsTranslation('hi'), true);
     assert.equal(needsTranslation('ဘာသာပြန်ပေးပါ'), true);
     assert.equal(needsTranslation('good 👍'), true);
+    assert.equal(needsTranslation('Καλημέρα'), true);
 });
 
 test('module constants are the values the spec fixed', () => {
@@ -100,7 +146,7 @@ Expected: FAIL — `Cannot find module './comments.js'`
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `comments.js`:
+Create `comments.js`. Note the declaration order: `needsTranslation` must come before `detectScript`, which calls it.
 
 ```js
 // Pure helpers for the admin comments section.
@@ -117,30 +163,6 @@ export const TARGET_LANG = 'en';
 // The display name admin replies are posted under, seen by users in the app.
 export const ADMIN_NAME = 'Movie Recap';
 
-// Kana is checked before han because Japanese mixes the two, and han alone
-// would misreport Japanese as Chinese. Ordered by what the live data contains.
-const SCRIPT_RANGES = [
-    ['my', /[က-႟]/],   // Burmese — 65 comments
-    ['ar', /[؀-ۿ]/],   // Arabic — 7 comments
-    ['th', /[฀-๿]/],   // Thai — 1 comment
-    ['ja', /[぀-ヿ]/],   // Hiragana + katakana
-    ['ko', /[가-힯]/],   // Hangul
-    ['zh', /[一-鿿]/],   // Han
-    ['hi', /[ऀ-ॿ]/],   // Devanagari
-    ['ru', /[Ѐ-ӿ]/]    // Cyrillic
-];
-
-// The script a comment is written in, as a hint only. Latin-script text still
-// goes to the model, because romanized Burmese and Tagalog are
-// indistinguishable from English by regex.
-export function detectScript(text) {
-    if (!text) return 'empty';
-    for (const [code, pattern] of SCRIPT_RANGES) {
-        if (pattern.test(text)) return code;
-    }
-    return 'latin';
-}
-
 // Whether this text carries words worth sending to a translator. Emoji,
 // punctuation and bare digits carry no language, so they never leave the
 // browser.
@@ -148,12 +170,51 @@ export function needsTranslation(text) {
     if (!text) return false;
     return /\p{L}/u.test(String(text));
 }
+
+// Writing systems, checked in order. These name the SCRIPT, never the
+// language — Persian and Urdu are written in Arabic script, Ukrainian and
+// Bulgarian in Cyrillic. Naming these 'ar' or 'ru' would invite using them as
+// a translation target and answer a Persian speaker in Arabic. The real
+// language is whatever the model detects and stores.
+//
+// Kana precedes han because Japanese mixes the two and han alone would report
+// Japanese as han. Latin comes last so mixed text reports the script that
+// actually needs translating.
+const SCRIPT_RANGES = [
+    ['myanmar', /[\u1000-\u109F\uA9E0-\uA9FF\uAA60-\uAA7F]/],   // incl. Extended-A/B
+    ['arabic', /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/],    // incl. Supplement, Extended-A
+    ['thai', /[\u0E00-\u0E7F]/],
+    ['kana', /[\u3040-\u30FF]/],
+    ['hangul', /[\uAC00-\uD7A3]/],
+    ['han', /[\u4E00-\u9FFF]/],
+    ['devanagari', /[\u0900-\u097F]/],
+    ['cyrillic', /[\u0400-\u04FF]/],
+    ['greek', /[\u0370-\u03FF]/],
+    ['hebrew', /[\u0590-\u05FF]/],
+    ['latin', /[A-Za-z\u00C0-\u024F]/]
+];
+
+// The writing system a comment uses. This drives a UI hint and nothing else.
+//
+// 'unknown' means real letters in a script not listed above, kept distinct
+// from 'latin' so no caller can mistake an unrecognized script for text
+// already in the admin's language and skip translating it.
+export function detectScript(text) {
+    const value = String(text ?? '');
+    if (!value) return 'empty';
+
+    for (const [script, pattern] of SCRIPT_RANGES) {
+        if (pattern.test(value)) return script;
+    }
+
+    return needsTranslation(value) ? 'unknown' : 'empty';
+}
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test`
-Expected: PASS — all 6 new tests pass, existing `last-added.test.js` tests still pass.
+Expected: PASS — all 11 new tests pass, existing `last-added.test.js` tests still pass.
 
 - [ ] **Step 5: Commit**
 
@@ -1146,6 +1207,7 @@ import {
     TARGET_LANG,
     ADMIN_NAME,
     detectScript,
+    needsTranslation,
     flattenComments,
     collectTranslatable,
     batchItems,
@@ -1360,6 +1422,8 @@ function buildCommentBody(item, movieTitle) {
     time.textContent = formatRelativeTime(item.timestamp, Date.now());
     head.appendChild(time);
 
+    // Prefer the language the model actually detected; fall back to the script
+    // only as a hint while a translation is still pending.
     const cached = translations[item.id];
     const lang = cached?.lang || detectScript(item.text);
     if (lang && lang !== 'latin' && lang !== 'empty') {
@@ -1639,14 +1703,21 @@ replyTranslateBtn?.addEventListener('click', async () => {
         return;
     }
 
+    // The target is the language the MODEL detected, never one guessed from the
+    // script. Persian is written in Arabic script and Ukrainian in Cyrillic, so
+    // guessing would answer them in Arabic and Russian — confidently wrong.
     const cached = translations[replyTarget?.id];
-    const targetLang = cached?.lang || detectScript(replyTarget?.text || '');
+    const targetLang = cached?.lang;
 
-    // Nothing to translate into: the commenter already writes the admin's
-    // language. Preview the plain English so the flow stays identical.
-    if (!targetLang || targetLang === TARGET_LANG || targetLang === 'latin' || targetLang === 'empty') {
+    // Either the commenter already writes the admin's language, or nothing
+    // reliable is known yet. Preview the plain English rather than guess.
+    if (!targetLang || targetLang === TARGET_LANG) {
         replyBody = original;
         showPreview(replyBody);
+
+        if (!targetLang && needsTranslation(replyTarget?.text || '')) {
+            showToast('Not translated yet, so the reply language is unknown — this will post in English.');
+        }
         return;
     }
 
