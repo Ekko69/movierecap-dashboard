@@ -138,3 +138,48 @@ export function flattenComments(tree, moviesById = new Map()) {
     rows.sort((a, b) => (b.timestamp - a.timestamp) || byId(a, b));
     return rows;
 }
+
+// Every comment and reply still needing a translation fetched.
+//
+// Admin-authored items are skipped: this dashboard wrote them, in TARGET_LANG
+// already. Cached ids are skipped so each item costs one API call ever.
+export function collectTranslatable(rows, cache = {}) {
+    const pending = [];
+
+    for (const row of rows) {
+        for (const item of [row, ...(row.replies || [])]) {
+            if (item.isAdmin) continue;
+            if (!needsTranslation(item.text)) continue;
+            if (cache[item.id]) continue;
+            pending.push({ id: item.id, text: item.text });
+        }
+    }
+
+    return pending;
+}
+
+// Fixed-size batches for the translate endpoint. 25 keeps a request well
+// inside the model's output budget while making the 274-comment backlog about
+// a dozen calls rather than 274.
+export function batchItems(items, size = 25) {
+    if (size < 1) throw new Error('batch size must be at least 1');
+
+    const batches = [];
+    for (let index = 0; index < items.length; index += size) {
+        batches.push(items.slice(index, index + size));
+    }
+    return batches;
+}
+
+const REPLY_SEPARATOR = '\n—\n';
+
+// The body posted for an admin reply: the reader's language first so they see
+// it immediately, the English original beneath as a fallback for when the
+// translation reads oddly.
+export function formatAdminReply(translation, original) {
+    const source = String(original || '').trim();
+    const translated = String(translation || '').trim();
+
+    if (!translated || translated === source) return source;
+    return `${translated}${REPLY_SEPARATOR}${source}`;
+}

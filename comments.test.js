@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { detectScript, needsTranslation, TARGET_LANG, ADMIN_NAME, flattenComments } from './comments.js';
+import { detectScript, needsTranslation, TARGET_LANG, ADMIN_NAME, flattenComments, collectTranslatable, batchItems, formatAdminReply } from './comments.js';
 
 test('detectScript names the scripts present in the live data', () => {
     assert.equal(detectScript('ဘာသာပြန်ပေးပါ'), 'myanmar');
@@ -247,4 +247,82 @@ test('flattenComments treats a non-boolean isAdmin as not admin', () => {
     const [row] = flattenComments(tree);
     assert.equal(row.isAdmin, false);
     assert.equal(row.replies[0].isAdmin, false);
+});
+
+test('collectTranslatable skips emoji-only, admin and already-cached items', () => {
+    const rows = [
+        { id: 'c1', text: 'ဘာသာပြန်ပေးပါ', isAdmin: false, replies: [] },
+        { id: 'c2', text: '💜', isAdmin: false, replies: [] },
+        { id: 'c3', text: 'already done', isAdmin: false, replies: [] },
+        { id: 'c4', text: 'posted by admin', isAdmin: true, replies: [] }
+    ];
+    const cache = { c3: { text: 'already done', lang: 'en' } };
+
+    assert.deepEqual(collectTranslatable(rows, cache), [
+        { id: 'c1', text: 'ဘာသာပြန်ပေးပါ' }
+    ]);
+});
+
+test('collectTranslatable reaches into replies as well as comments', () => {
+    const rows = [{
+        id: 'c1', text: 'hi', isAdmin: false,
+        replies: [
+            { id: 'r1', text: 'สวัสดี', isAdmin: false },
+            { id: 'r2', text: 'admin words', isAdmin: true }
+        ]
+    }];
+
+    assert.deepEqual(collectTranslatable(rows, {}), [
+        { id: 'c1', text: 'hi' },
+        { id: 'r1', text: 'สวัสดี' }
+    ]);
+});
+
+test('collectTranslatable returns nothing when everything is cached', () => {
+    const rows = [{ id: 'c1', text: 'hi', isAdmin: false, replies: [] }];
+    assert.deepEqual(collectTranslatable(rows, { c1: { text: 'hi', lang: 'en' } }), []);
+    assert.deepEqual(collectTranslatable([], {}), []);
+});
+
+test('collectTranslatable tolerates a row with no replies array', () => {
+    // flattenComments always supplies one, but this must not throw if a caller
+    // hands over a bare object.
+    assert.deepEqual(collectTranslatable([{ id: 'c1', text: 'hi', isAdmin: false }], {}), [
+        { id: 'c1', text: 'hi' }
+    ]);
+});
+
+test('batchItems splits into fixed-size batches', () => {
+    const items = Array.from({ length: 7 }, (_, i) => ({ id: `c${i}`, text: 'x' }));
+    const batches = batchItems(items, 3);
+    assert.equal(batches.length, 3);
+    assert.deepEqual(batches.map(b => b.length), [3, 3, 1]);
+    // Nothing lost or duplicated in the split.
+    assert.deepEqual(batches.flat().map(b => b.id), items.map(i => i.id));
+});
+
+test('batchItems handles an empty list and rejects a nonsense size', () => {
+    assert.deepEqual(batchItems([], 25), []);
+    assert.throws(() => batchItems([{ id: 'a', text: 'x' }], 0), /at least 1/);
+    assert.throws(() => batchItems([{ id: 'a', text: 'x' }], -1), /at least 1/);
+});
+
+test('formatAdminReply puts the translation above the English original', () => {
+    assert.equal(
+        formatAdminReply('ဒေါင်းလုဒ်မရ', "Download isn't available yet."),
+        "ဒေါင်းလုဒ်မရ\n—\nDownload isn't available yet."
+    );
+});
+
+test('formatAdminReply posts the original alone when there is nothing to add', () => {
+    // English-to-English: the translator echoed the input, so a separator and a
+    // duplicate would be noise.
+    assert.equal(formatAdminReply('Same text', 'Same text'), 'Same text');
+    assert.equal(formatAdminReply('', 'Only English'), 'Only English');
+    assert.equal(formatAdminReply(null, 'Only English'), 'Only English');
+    assert.equal(formatAdminReply('  ', 'Only English'), 'Only English');
+});
+
+test('formatAdminReply trims surrounding whitespace', () => {
+    assert.equal(formatAdminReply('  ABC  ', '  xyz  '), 'ABC\n—\nxyz');
 });
