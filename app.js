@@ -38,6 +38,7 @@ import {
     deletionWrites,
     clipText
 } from './comments.js';
+import { initAnalyticsView } from './analytics-view.js';
 
 // Firebase Config
 // Firebase Config
@@ -2208,6 +2209,7 @@ onValue(moviesRef, (snapshot) => {
     // movies arrive after the comments did.
     try {
         rebuildComments();
+        analyticsView.rerender();
     } catch (error) {
         console.error('Refreshing comment titles failed:', error);
     }
@@ -2840,6 +2842,7 @@ function showView(name) {
         view.section?.classList.toggle('hidden', viewName !== name);
     }
     if (pageTitle) pageTitle.textContent = VIEWS[name].title;
+    if (name === 'analytics') analyticsView.show();
 }
 
 for (const [name, view] of Object.entries(VIEWS)) {
@@ -2876,6 +2879,7 @@ onValue(ref(db, 'comments'), (snapshot) => {
     commentsLoaded = true;
     rebuildComments();
     translatePending();
+    analyticsView.rerender();
 }, (error) => {
     // Without this a failed read is silent and the spinner turns forever.
     console.error('[comments] realtime read failed', error);
@@ -3372,3 +3376,13 @@ async function deleteComment(item, row) {
         showToast(`Could not delete: ${error.message}`);
     }
 }
+
+// --- Analytics ---
+//
+// The view reads movies and comments through getters, so every render joins
+// against what is loaded at that moment.
+const analyticsView = initAnalyticsView({
+    section: document.getElementById('analytics-view'),
+    getMovies: () => allMovies,
+    getCommentRows: () => commentRows
+});

@@ -1890,3 +1890,415 @@ textarea:focus {
 .reply-context-translation {
     word-break: break-word;
 }
+
+/* ---------- Analytics ---------- */
+
+/* Charts use one series colour, --color-accent (#bd369e), which passes every
+   palette check on the card surface. Chart text uses --text-secondary (6.5:1 on
+   the card); --text-muted is too faint for text there (2.6:1). */
+
+.analytics-view {
+    padding: 20px 30px 60px;
+}
+
+.analytics-filters {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.range-btn {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-family: var(--font-family);
+    cursor: pointer;
+}
+
+.range-btn[aria-pressed="true"] {
+    color: var(--text-primary);
+    border-color: var(--color-accent);
+    background: rgba(189, 54, 158, 0.15);
+    font-weight: 600;
+}
+
+/* A refetch keeps the previous figures on screen, dimmed. */
+.analytics-body.is-refreshing {
+    opacity: 0.45;
+    pointer-events: none;
+    transition: opacity var(--transition);
+}
+
+.analytics-section {
+    margin-bottom: 28px;
+}
+
+.analytics-heading {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    margin: 0 0 12px;
+}
+
+.analytics-card {
+    background: var(--bg-card);
+    border-radius: var(--border-radius);
+    padding: 18px 20px;
+}
+
+.chart-title {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin: 0 0 12px;
+}
+
+.analytics-empty,
+.analytics-notes,
+.analytics-footnote {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.analytics-notes {
+    margin: 0 0 16px;
+}
+
+.analytics-footnote {
+    margin: 12px 0 0;
+}
+
+/* Setup, no-access and error cards. */
+.analytics-state h3 {
+    color: var(--text-primary);
+    margin: 0 0 8px;
+}
+
+.analytics-lead {
+    color: var(--text-secondary);
+    margin: 0 0 12px;
+}
+
+.analytics-problem {
+    color: var(--text-primary);
+    border-left: 3px solid var(--color-accent);
+    padding-left: 10px;
+    margin: 0 0 14px;
+}
+
+.setup-steps {
+    color: var(--text-primary);
+    padding-left: 20px;
+    line-height: 1.7;
+    margin: 0 0 16px;
+}
+
+.setup-steps a {
+    color: var(--color-accent-light);
+}
+
+.analytics-email,
+.missing-params code {
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--text-primary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    word-break: break-all;
+}
+
+.analytics-missing p {
+    color: var(--text-secondary);
+    margin: 0 0 8px;
+}
+
+.missing-params code {
+    margin-right: 6px;
+}
+
+/* Stat tiles: proportional figures at display size. */
+.stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+    margin-bottom: 14px;
+}
+
+.stat-tile {
+    background: var(--bg-card);
+    border-radius: var(--border-radius);
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.stat-label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.stat-value {
+    color: var(--text-primary);
+    font-size: 1.9rem;
+    font-weight: 600;
+}
+
+/* The line chart: a 2px line, a 10% wash, a ringed end dot, 1px solid grid. */
+.line-chart {
+    position: relative;
+}
+
+.line-chart svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+.chart-grid {
+    stroke: rgba(255, 255, 255, 0.08);
+    stroke-width: 1;
+}
+
+.chart-tick {
+    fill: var(--text-secondary);
+    font-family: var(--font-family);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+.chart-line {
+    fill: none;
+    stroke: var(--color-accent);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+
+.chart-area {
+    fill: var(--color-accent);
+    fill-opacity: 0.1;
+}
+
+.chart-dot {
+    fill: var(--color-accent);
+    stroke: var(--bg-card);
+    stroke-width: 2;
+}
+
+.chart-end-label {
+    fill: var(--text-primary);
+    font-family: var(--font-family);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.chart-crosshair {
+    stroke: var(--text-secondary);
+    stroke-width: 1;
+}
+
+.chart-hit {
+    fill: transparent;
+    cursor: crosshair;
+    outline: none;
+}
+
+.chart-hit:focus-visible {
+    stroke: var(--color-accent-light);
+    stroke-width: 1;
+}
+
+.chart-tooltip {
+    position: absolute;
+    transform: translate(-50%, calc(-100% - 12px));
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    white-space: nowrap;
+    pointer-events: none;
+    background: var(--bg-base);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+}
+
+/* The tooltip sets its own display, which would otherwise override the hidden
+   attribute and leave an empty pill on the chart. */
+.chart-tooltip[hidden] {
+    display: none;
+}
+
+.chart-tooltip strong {
+    color: var(--text-primary);
+}
+
+.chart-tooltip span {
+    color: var(--text-secondary);
+}
+
+/* Tables: numbers align, so tabular figures. */
+.chart-table,
+.title-list {
+    margin-top: 12px;
+    font-size: 0.85rem;
+}
+
+.chart-table summary,
+.title-list summary {
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+}
+
+.data-table th,
+.data-table td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.data-table th {
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.8rem;
+}
+
+.data-table td {
+    color: var(--text-primary);
+}
+
+.data-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.data-table .strong {
+    font-weight: 600;
+}
+
+.movie-stats-wrap {
+    overflow-x: auto;
+}
+
+.movie-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 220px;
+}
+
+/* A fixed slot whether or not the image exists or loads, so titles align. */
+.movie-thumb {
+    width: 56px;
+    height: 32px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.movie-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.copies-badge {
+    border: 1px solid var(--text-secondary);
+    color: var(--text-secondary);
+    border-radius: 20px;
+    padding: 0 8px;
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+.title-list ul {
+    color: var(--text-primary);
+    margin: 8px 0 0;
+    padding-left: 18px;
+    columns: 2;
+}
+
+/* Ranked bars: one colour, at most 24px thick, a 4px rounded end, square at the
+   base, the value at the tip. A row is its own hover and focus target. */
+/* Four device lists as a 2×2 grid, one column on narrow screens. */
+.bar-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+@media (max-width: 900px) {
+    .bar-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* One grid for the whole list, so every bar starts on the same baseline while
+   the name column fits the longest name. Each row joins it through subgrid and
+   keeps its own box for the hover and focus lift. */
+.bar-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: minmax(60px, max-content) minmax(80px, 1fr) auto;
+    column-gap: 10px;
+    row-gap: 6px;
+}
+
+.bar-row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    align-items: center;
+    padding: 4px 6px;
+    border-radius: 6px;
+    outline: none;
+}
+
+.bar-row:hover,
+.bar-row:focus-visible {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.bar-row:hover .bar-fill,
+.bar-row:focus-visible .bar-fill {
+    filter: brightness(1.2);
+}
+
+.bar-name {
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bar-track {
+    height: 12px;
+}
+
+.bar-fill {
+    display: block;
+    height: 100%;
+    min-width: 2px;
+    background: var(--color-accent);
+    border-radius: 0 4px 4px 0;
+}
+
+.bar-value {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+}
