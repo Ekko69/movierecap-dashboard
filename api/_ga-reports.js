@@ -47,8 +47,10 @@ export function missingDimensions(params) {
     const missing = [];
 
     if (!keys.plays) {
+        // Titles are what gets recommended, and title clicks need item_name:
+        // an item_id already registered would not pair with them.
         missing.push('movie_title');
-        if (!params.has('item_name') && !params.has('item_id')) missing.push('item_name');
+        if (!params.has('item_name')) missing.push('item_name');
     } else if (!keys.clicks) {
         missing.push(keys.key === 'title' ? 'item_name' : 'item_id');
     }
@@ -171,19 +173,23 @@ export function fillDaily(rows) {
     return points;
 }
 
-// Rows with no usable value: events logged before a dimension was registered
-// come back as "(not set)".
-const isUnset = (value) => value === '' || value === '(not set)';
+// Rows that name no movie or category: events logged before a dimension was
+// registered come back as "(not set)", and GA folds overflow into "(other)",
+// which notes.otherRow reports separately. The where-lists keep both, because
+// there an unknown country or language is still a real group of users.
+const isUnset = (value) => value === '' || value === '(not set)' || value === '(other)';
 
-// {name: count} from single-dimension rows, summing any repeats.
+// {name: count} from single-dimension rows, summing any repeats. Counted in a
+// Map, not a plain object: a title such as "constructor" or "__proto__" would
+// otherwise collide with Object.prototype and be lost or corrupted.
 function countBy(rows) {
-    const counts = {};
+    const counts = new Map();
     for (const row of rows) {
         const name = row.dims[0];
         if (isUnset(name)) continue;
-        counts[name] = (counts[name] || 0) + (row.values[0] || 0);
+        counts.set(name, (counts.get(name) || 0) + (row.values[0] || 0));
     }
-    return counts;
+    return Object.fromEntries(counts);
 }
 
 // {name: count} for one event, from rows of [eventName, key].

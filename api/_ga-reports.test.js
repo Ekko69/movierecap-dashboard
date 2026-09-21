@@ -57,6 +57,11 @@ test('missingDimensions names what to register, preferring titles', () => {
     assert.deepEqual(missingDimensions(new Set(['movie_title', 'item_name', 'category_name'])), []);
 });
 
+test('missingDimensions asks for item_name even when item_id is registered', () => {
+    // It recommends titles, and title clicks need item_name; item_id would not pair.
+    assert.deepEqual(missingDimensions(new Set(['item_id'])), ['movie_title', 'item_name', 'category_name']);
+});
+
 const ALL = new Set(['movie_title', 'item_name', 'category_name']);
 
 test('buildReports runs the six built-in reports whatever is registered', () => {
@@ -85,6 +90,7 @@ test('buildReports asks for the right fields', () => {
     assert.equal(byName.totals.dimensions, undefined);
 
     assert.deepEqual(byName.daily.dimensions, [{ name: 'date' }]);
+    assert.deepEqual(byName.daily.orderBys, [{ dimension: { dimensionName: 'date' } }]);
 
     assert.deepEqual(byName.countries.dimensions, [{ name: 'country' }]);
     assert.equal(byName.countries.limit, 10);
@@ -207,12 +213,12 @@ test('shapeAnalytics assembles the full response', () => {
     });
 });
 
-test('shapeAnalytics drops "(not set)" from movie and category figures', () => {
+test('shapeAnalytics drops "(not set)" and "(other)" from movie and category figures', () => {
     // Events logged before a dimension was registered come back as "(not set)".
     const reports = buildReports(28, ALL);
     const shaped = shapeAnalytics({ days: 28, params: ALL, reports, responses: responsesFor(reports, {
-        plays: [row(['video_start', '(not set)'], [9]), row(['video_start', ''], [2])],
-        categories: [row(['(not set)'], [3])]
+        plays: [row(['video_start', '(not set)'], [9]), row(['video_start', ''], [2]), row(['video_start', '(other)'], [4])],
+        categories: [row(['(not set)'], [3]), row(['(other)'], [6])]
     }) });
     assert.deepEqual(shaped.movies.plays, {});
     assert.deepEqual(shaped.categories, []);
@@ -247,4 +253,16 @@ test('shapeAnalytics surfaces thresholding and the (other) row from any report',
         languages: { dataLossFromOtherRow: true }
     }) });
     assert.deepEqual(shaped.notes, { thresholded: true, otherRow: true });
+});
+
+test('shapeAnalytics counts titles that share a name with Object properties', () => {
+    // Titles come from the app. A plain object would lose "__proto__" and turn
+    // "constructor" into a string of native code.
+    const reports = buildReports(28, ALL);
+    const shaped = shapeAnalytics({ days: 28, params: ALL, reports, responses: responsesFor(reports, {
+        clicks: [row(['constructor'], [5]), row(['__proto__'], [3]), row(['toString'], [2])]
+    }) });
+    assert.equal(shaped.movies.clicks.constructor, 5);
+    assert.equal(Object.getOwnPropertyDescriptor(shaped.movies.clicks, '__proto__').value, 3);
+    assert.equal(shaped.movies.clicks.toString, 2);
 });
