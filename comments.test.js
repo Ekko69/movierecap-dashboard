@@ -184,3 +184,67 @@ test('flattenComments works with no movie map supplied', () => {
     const rows = flattenComments({ 'movie-a': { 'c1': { text: 'x', timestamp: 1 } } });
     assert.equal(rows[0].movieTitle, 'Unknown movie');
 });
+
+test('flattenComments normalizes a timestamp the database cannot be trusted to type', () => {
+    // Schemaless database: another client version may have written a string.
+    // NaN in a comparator silently scrambles order, so it is normalized away.
+    const tree = { m: {
+        'b-bad': { text: 'bad', timestamp: 'not-a-number' },
+        'z-valid': { text: 'z', timestamp: 100 },
+        'a-valid': { text: 'a', timestamp: 200 }
+    } };
+    const rows = flattenComments(tree);
+    assert.deepEqual(rows.map(r => r.id), ['a-valid', 'z-valid', 'b-bad']);
+    assert.equal(rows[2].timestamp, 0);
+});
+
+test('flattenComments accepts a numeric string timestamp', () => {
+    assert.equal(flattenComments({ m: { c1: { text: 'x', timestamp: '1500' } } })[0].timestamp, 1500);
+});
+
+test('flattenComments orders tied ids by codepoint, as push ids expect', () => {
+    // Codepoint order is '-'(45) < 'Z'(90) < '_'(95). localeCompare gives a
+    // different, ICU- and locale-dependent answer.
+    const tree = { m: {
+        '_b': { text: 'b', timestamp: 7 },
+        '-a': { text: 'a', timestamp: 7 },
+        'Zc': { text: 'c', timestamp: 7 }
+    } };
+    assert.deepEqual(flattenComments(tree).map(r => r.id), ['-a', 'Zc', '_b']);
+});
+
+test('flattenComments orders tied replies by codepoint too', () => {
+    const tree = { m: { c1: { text: 'p', timestamp: 1, replies: {
+        '_b': { text: 'b', timestamp: 5 },
+        '-a': { text: 'a', timestamp: 5 }
+    } } } };
+    assert.deepEqual(flattenComments(tree)[0].replies.map(r => r.id), ['-a', '_b']);
+});
+
+test('flattenComments defaults reply fields the way it defaults comment fields', () => {
+    const [reply] = flattenComments({ m: { c1: { text: 'p', timestamp: 1, replies: { r1: {} } } } })[0].replies;
+    assert.equal(reply.text, '');
+    assert.equal(reply.userName, 'Anonymous');
+    assert.equal(reply.timestamp, 0);
+    assert.equal(reply.isAdmin, false);
+});
+
+test('flattenComments survives malformed replies', () => {
+    const cases = [
+        { c1: { text: 'p', timestamp: 1, replies: null } },
+        { c1: { text: 'p', timestamp: 1, replies: 'nonsense' } },
+        { c1: { text: 'p', timestamp: 1, replies: { r1: null } } }
+    ];
+    for (const comments of cases) {
+        assert.deepEqual(flattenComments({ m: comments })[0].replies, []);
+    }
+});
+
+test('flattenComments treats a non-boolean isAdmin as not admin', () => {
+    // The database is unauthenticated, so isAdmin is whatever anyone wrote.
+    const tree = { m: { c1: { text: 'x', timestamp: 1, isAdmin: 'true',
+        replies: { r1: { text: 'y', timestamp: 2, isAdmin: 1 } } } } };
+    const [row] = flattenComments(tree);
+    assert.equal(row.isAdmin, false);
+    assert.equal(row.replies[0].isAdmin, false);
+});

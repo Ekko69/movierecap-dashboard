@@ -64,6 +64,25 @@ export function detectScript(text) {
     return needsTranslation(value) ? 'unknown' : 'empty';
 }
 
+// Timestamps are normalized rather than trusted. The database is schemaless
+// and another client version may have written a string; Number('x') is NaN,
+// and a NaN in a comparator silently stops ordering anything — a single
+// corrupted row would land at an arbitrary point in a newest-first list
+// instead of sorting predictably to the bottom.
+function toTimestamp(value) {
+    return Number(value) || 0;
+}
+
+// Firebase push ids are built so codepoint order matches creation order, so a
+// plain comparison is both correct and deterministic. localeCompare would
+// apply ICU collation, which orders punctuation and case differently and can
+// differ between the browser and the test runner — destroying the very
+// stability this tie-break exists to provide.
+function byId(a, b) {
+    if (a.id === b.id) return 0;
+    return a.id < b.id ? -1 : 1;
+}
+
 // A thread's replies, oldest first: a conversation reads top to bottom.
 function flattenReplies(replies) {
     if (!replies || typeof replies !== 'object') return [];
@@ -74,10 +93,10 @@ function flattenReplies(replies) {
             id: replyId,
             text: reply.text || '',
             userName: reply.userName || 'Anonymous',
-            timestamp: reply.timestamp || 0,
+            timestamp: toTimestamp(reply.timestamp),
             isAdmin: reply.isAdmin === true
         }))
-        .sort((a, b) => (a.timestamp - b.timestamp) || a.id.localeCompare(b.id));
+        .sort((a, b) => (a.timestamp - b.timestamp) || byId(a, b));
 }
 
 // The comments tree as a newest-first inbox, each row joined to its movie
@@ -99,17 +118,23 @@ export function flattenComments(tree, moviesById = new Map()) {
 
             rows.push({
                 id: commentId,
+                // The structural key, not comment.movieId. Both agree across all
+                // 274 live records, but this is what the delete path writes back
+                // to, so the tree's own shape is the safer source.
                 movieId,
                 movieTitle: moviesById.get(movieId)?.title || 'Unknown movie',
                 text: comment.text || '',
                 userName: comment.userName || 'Anonymous',
-                timestamp: comment.timestamp || 0,
+                timestamp: toTimestamp(comment.timestamp),
+                // Strict: the database is unauthenticated, so this holds
+                // whatever anyone wrote. A truthy non-boolean must not light up
+                // an ADMIN badge.
                 isAdmin: comment.isAdmin === true,
                 replies: flattenReplies(comment.replies)
             });
         }
     }
 
-    rows.sort((a, b) => (b.timestamp - a.timestamp) || a.id.localeCompare(b.id));
+    rows.sort((a, b) => (b.timestamp - a.timestamp) || byId(a, b));
     return rows;
 }
