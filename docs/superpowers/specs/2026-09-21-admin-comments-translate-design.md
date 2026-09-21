@@ -112,7 +112,9 @@ are triaging only hides what you came to find. Revisit if comments reach the low
 selector: there is one admin, who reads English. A selector can be added when a second
 reader exists who does not.
 
-**New endpoint: `api/translate.js`**, registered in dev-server.js alongside the others.
+**New endpoint: `api/translate.js`**. No registration needed — dev-server.js resolves
+handlers dynamically via `import('./api/' + name + '.js')`, so only its startup log line
+needs the new route appended, which is cosmetic.
 
 Not a reuse of `api/ai-service.js`: that endpoint is hardwired to a movie-metadata
 system prompt and a one-prompt-one-completion shape. Translation needs batching,
@@ -184,7 +186,9 @@ discarding what was typed.
 
 ### 5. Deleting
 
-Reuses the existing `#delete-modal` confirm flow.
+Uses a native `confirm()`, matching `confirmDelete` at app.js:2293 — the pattern the
+codebase actually uses. The `#delete-modal` markup in index.html is dead: `app.js`
+references it zero times. Wiring it up is a separate cleanup, not this feature's job.
 
 Deleting a parent comment also removes its nested replies, and the modal says so
 explicitly — that consequence is invisible in the UI otherwise. The cached translation
