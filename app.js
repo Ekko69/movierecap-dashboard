@@ -20,6 +20,7 @@ import { initBulkYoutube, isBulkProcessing, resetBulkYoutube } from './bulk-yout
 import {
     youtubeWatchURL,
     youtubeThumbnailURL,
+    videoIdFromSourceURL,
     formatRelativeTime,
     pickLastAdded
 } from './last-added.js';
@@ -75,6 +76,10 @@ function buildDuplicateKey(title, year) {
 }
 
 let existingMoviesByKey = new Map();
+// Video id -> movie, for recognising an already-imported YouTube video before
+// anything is fetched or downloaded. Only movies imported since sourceURL
+// shipped appear here; older records have no source to key on.
+let existingMoviesByVideoId = new Map();
 // Duplicate key the banner was last shown for, so Save does not warn a second time.
 let warnedDuplicateKey = null;
 // Duplicate key the user explicitly dismissed, so the banner stays hidden for it.
@@ -360,6 +365,16 @@ async function uploadThumbnailBlob(movieId, blob, name = 'batch-thumb.jpg') {
 
 function isDuplicateMovie(title, year) {
     return existingMoviesByKey.has(buildDuplicateKey(title, year));
+}
+
+// The already-imported movie for a YouTube video id, or null. Never returns the
+// movie currently being edited, matching findDuplicateMovie's contract.
+function findMovieByVideoId(videoId) {
+    if (!videoId) return null;
+    const match = existingMoviesByVideoId.get(videoId);
+    if (!match) return null;
+    if (editingMovieId && match.id === editingMovieId) return null;
+    return match;
 }
 
 // Returns the existing movie that collides with this title/year, or null.
@@ -2055,6 +2070,11 @@ onValue(moviesRef, (snapshot) => {
     }
     existingMoviesByKey = new Map(
         allMovies.map((movie) => [buildDuplicateKey(movie.title, movie.year), movie])
+    );
+    existingMoviesByVideoId = new Map(
+        allMovies
+            .map((movie) => [videoIdFromSourceURL(movie.sourceURL), movie])
+            .filter(([videoId]) => videoId)
     );
     applyFiltersAndRender();
     if (!movieFormPanel.classList.contains('hidden')) refreshDuplicateWarning();
