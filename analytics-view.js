@@ -306,6 +306,73 @@ function movieSection(data, library, commentRows) {
     return section;
 }
 
+function barList(items, unit) {
+    const max = Math.max(...items.map((item) => item.value), 1);
+    const list = el('ol', 'bar-list');
+    for (const item of items) {
+        const row = el('li', 'bar-row');
+        row.tabIndex = 0;
+        row.setAttribute('aria-label', `${item.name}: ${formatCount(item.value)} ${unit}`);
+
+        const name = el('span', 'bar-name', item.name);
+        name.title = item.name;
+        const track = el('span', 'bar-track');
+        const fill = el('span', 'bar-fill');
+        fill.style.width = `${(item.value / max) * 100}%`;
+        track.append(fill);
+
+        row.append(name, track, el('span', 'bar-value', formatCount(item.value)));
+        list.append(row);
+    }
+    return list;
+}
+
+function categorySection(data) {
+    const section = el('section', 'analytics-section');
+    section.append(el('h3', 'analytics-heading', 'Categories'));
+    const card = el('div', 'analytics-card');
+    section.append(card);
+
+    if (!data.categories) {
+        card.append(missingNote(['category_name'], 'Category views'));
+    } else if (!data.categories.length) {
+        card.append(el('p', 'analytics-empty', 'No category views in this period.'));
+    } else {
+        card.append(el('h4', 'chart-title', 'Opened from the Home screen'));
+        card.append(barList(data.categories.map((category) => ({ name: category.name, value: category.views })), 'views'));
+    }
+    return section;
+}
+
+// GA's "(not set)" is shown as "Unknown"; bare version numbers get a prefix,
+// joined as given: "Android 14", "v2.1".
+function displayName(name, prefix = '') {
+    if (name === '(not set)' || name === '') return 'Unknown';
+    return `${prefix}${name}`;
+}
+
+function whereSection(where) {
+    const section = el('section', 'analytics-section');
+    section.append(el('h3', 'analytics-heading', 'Where & devices'));
+    const grid = el('div', 'bar-grid');
+
+    for (const [title, items, prefix] of [
+        ['Countries', where.countries, ''],
+        ['Languages', where.languages, ''],
+        ['Android versions', where.osVersions, 'Android '],
+        ['App versions', where.appVersions, 'v']
+    ]) {
+        const card = el('div', 'analytics-card');
+        card.append(el('h4', 'chart-title', `${title} · active users`));
+        card.append(items.length
+            ? barList(items.map((item) => ({ name: displayName(item.name, prefix), value: item.users })), 'active users')
+            : el('p', 'analytics-empty', 'No data in this period.'));
+        grid.append(card);
+    }
+    section.append(grid);
+    return section;
+}
+
 function spinner() {
     const box = el('div', 'loading-state');
     box.append(el('div', 'spinner'), el('p', null, 'Loading analytics...'));
@@ -463,6 +530,8 @@ function buildReport(data, movies, commentRows) {
     if (notes) parts.push(notes);
     parts.push(audienceSection(data.audience));
     parts.push(movieSection(data, movies, commentRows));
+    parts.push(categorySection(data));
+    parts.push(whereSection(data.where));
     return parts;
 }
 
