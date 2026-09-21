@@ -342,6 +342,75 @@ test('flattenComments works with no movie map supplied', () => {
 });
 ```
 
+
+Also append these, covering the reply path and both comparator hazards:
+
+```js
+test('flattenComments normalizes a timestamp the database cannot be trusted to type', () => {
+    // Schemaless database: another client version may have written a string.
+    // NaN in a comparator silently scrambles order, so it is normalized away.
+    const tree = { m: {
+        'b-bad': { text: 'bad', timestamp: 'not-a-number' },
+        'z-valid': { text: 'z', timestamp: 100 },
+        'a-valid': { text: 'a', timestamp: 200 }
+    } };
+    const rows = flattenComments(tree);
+    assert.deepEqual(rows.map(r => r.id), ['a-valid', 'z-valid', 'b-bad']);
+    assert.equal(rows[2].timestamp, 0);
+});
+
+test('flattenComments accepts a numeric string timestamp', () => {
+    assert.equal(flattenComments({ m: { c1: { text: 'x', timestamp: '1500' } } })[0].timestamp, 1500);
+});
+
+test('flattenComments orders tied ids by codepoint, as push ids expect', () => {
+    // Codepoint order is '-'(45) < 'Z'(90) < '_'(95). localeCompare gives a
+    // different, ICU- and locale-dependent answer.
+    const tree = { m: {
+        '_b': { text: 'b', timestamp: 7 },
+        '-a': { text: 'a', timestamp: 7 },
+        'Zc': { text: 'c', timestamp: 7 }
+    } };
+    assert.deepEqual(flattenComments(tree).map(r => r.id), ['-a', 'Zc', '_b']);
+});
+
+test('flattenComments orders tied replies by codepoint too', () => {
+    const tree = { m: { c1: { text: 'p', timestamp: 1, replies: {
+        '_b': { text: 'b', timestamp: 5 },
+        '-a': { text: 'a', timestamp: 5 }
+    } } } };
+    assert.deepEqual(flattenComments(tree)[0].replies.map(r => r.id), ['-a', '_b']);
+});
+
+test('flattenComments defaults reply fields the way it defaults comment fields', () => {
+    const [reply] = flattenComments({ m: { c1: { text: 'p', timestamp: 1, replies: { r1: {} } } } })[0].replies;
+    assert.equal(reply.text, '');
+    assert.equal(reply.userName, 'Anonymous');
+    assert.equal(reply.timestamp, 0);
+    assert.equal(reply.isAdmin, false);
+});
+
+test('flattenComments survives malformed replies', () => {
+    const cases = [
+        { c1: { text: 'p', timestamp: 1, replies: null } },
+        { c1: { text: 'p', timestamp: 1, replies: 'nonsense' } },
+        { c1: { text: 'p', timestamp: 1, replies: { r1: null } } }
+    ];
+    for (const comments of cases) {
+        assert.deepEqual(flattenComments({ m: comments })[0].replies, []);
+    }
+});
+
+test('flattenComments treats a non-boolean isAdmin as not admin', () => {
+    // The database is unauthenticated, so isAdmin is whatever anyone wrote.
+    const tree = { m: { c1: { text: 'x', timestamp: 1, isAdmin: 'true',
+        replies: { r1: { text: 'y', timestamp: 2, isAdmin: 1 } } } } };
+    const [row] = flattenComments(tree);
+    assert.equal(row.isAdmin, false);
+    assert.equal(row.replies[0].isAdmin, false);
+});
+```
+
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npm test`
@@ -352,6 +421,25 @@ Expected: FAIL — `flattenComments is not a function` (the import is undefined)
 Append to `comments.js`:
 
 ```js
+// Timestamps are normalized rather than trusted. The database is schemaless
+// and another client version may have written a string; Number('x') is NaN,
+// and a NaN in a comparator silently stops ordering anything — a single
+// corrupted row would land at an arbitrary point in a newest-first list
+// instead of sorting predictably to the bottom.
+function toTimestamp(value) {
+    return Number(value) || 0;
+}
+
+// Firebase push ids are built so codepoint order matches creation order, so a
+// plain comparison is both correct and deterministic. localeCompare would
+// apply ICU collation, which orders punctuation and case differently and can
+// differ between the browser and the test runner — destroying the very
+// stability this tie-break exists to provide.
+function byId(a, b) {
+    if (a.id === b.id) return 0;
+    return a.id < b.id ? -1 : 1;
+}
+
 // A thread's replies, oldest first: a conversation reads top to bottom.
 function flattenReplies(replies) {
     if (!replies || typeof replies !== 'object') return [];
@@ -362,10 +450,10 @@ function flattenReplies(replies) {
             id: replyId,
             text: reply.text || '',
             userName: reply.userName || 'Anonymous',
-            timestamp: reply.timestamp || 0,
+            timestamp: toTimestamp(reply.timestamp),
             isAdmin: reply.isAdmin === true
         }))
-        .sort((a, b) => (a.timestamp - b.timestamp) || a.id.localeCompare(b.id));
+        .sort((a, b) => (a.timestamp - b.timestamp) || byId(a, b));
 }
 
 // The comments tree as a newest-first inbox, each row joined to its movie
@@ -387,18 +475,24 @@ export function flattenComments(tree, moviesById = new Map()) {
 
             rows.push({
                 id: commentId,
+                // The structural key, not comment.movieId. Both agree across all
+                // 274 live records, but this is what the delete path writes back
+                // to, so the tree's own shape is the safer source.
                 movieId,
                 movieTitle: moviesById.get(movieId)?.title || 'Unknown movie',
                 text: comment.text || '',
                 userName: comment.userName || 'Anonymous',
-                timestamp: comment.timestamp || 0,
+                timestamp: toTimestamp(comment.timestamp),
+                // Strict: the database is unauthenticated, so this holds
+                // whatever anyone wrote. A truthy non-boolean must not light up
+                // an ADMIN badge.
                 isAdmin: comment.isAdmin === true,
                 replies: flattenReplies(comment.replies)
             });
         }
     }
 
-    rows.sort((a, b) => (b.timestamp - a.timestamp) || a.id.localeCompare(b.id));
+    rows.sort((a, b) => (b.timestamp - a.timestamp) || byId(a, b));
     return rows;
 }
 ```
