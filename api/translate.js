@@ -14,7 +14,7 @@ const CLAUDE_MODEL = 'claude-opus-5';
 // characters, so neither cap touches real use — they only bound abuse. At
 // these caps a full batch fits inside the max_tokens ceilings below.
 const MAX_ITEMS = 25;
-const MAX_TEXT_CHARS = 500;
+export const MAX_TEXT_CHARS = 500;
 
 // Echo retries in flight at once. This path also serves the Claude fallback,
 // which is reached exactly when OpenAI is already struggling, so a burst of up

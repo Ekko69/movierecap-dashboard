@@ -32,7 +32,10 @@ import {
     flattenComments,
     collectTranslatable,
     formatAdminReply,
-    createTranslationScheduler
+    createTranslationScheduler,
+    MAX_TRANSLATE_CHARS,
+    replyLanguage,
+    deletionWrites
 } from './comments.js';
 
 // Firebase Config
@@ -2959,13 +2962,13 @@ function renderComments() {
 function buildCommentCard(row) {
     const card = document.createElement('div');
     card.className = 'comment-card';
-    card.appendChild(buildCommentBody(row, row.movieTitle));
+    card.appendChild(buildCommentBody(row, row));
 
     if (row.replies.length > 0) {
         const thread = document.createElement('div');
         thread.className = 'comment-replies';
         for (const reply of row.replies) {
-            const replyEl = buildCommentBody(reply, null);
+            const replyEl = buildCommentBody(reply, row);
             replyEl.classList.add('comment-reply');
             thread.appendChild(replyEl);
         }
@@ -2975,22 +2978,23 @@ function buildCommentCard(row) {
     return card;
 }
 
-// Shared by comments and replies. `movieTitle` is null for replies, which sit
-// under a parent that already names the movie.
+// Shared by comments and replies. `row` is always the top-level comment, so a
+// reply knows its parent without searching for it; `item` is that comment or
+// one of its replies. Only the comment itself names the movie.
 //
 // Every user-authored string goes in through textContent, never innerHTML:
 // this text is written by anonymous users straight into the database.
-function buildCommentBody(item, movieTitle) {
+function buildCommentBody(item, row) {
     const wrapper = document.createElement('div');
 
     const head = document.createElement('div');
     head.className = 'comment-head';
 
-    if (movieTitle) {
+    if (item === row) {
         const movie = document.createElement('span');
         movie.className = 'comment-movie';
-        movie.textContent = `🎬 ${movieTitle}`;
-        movie.addEventListener('click', () => openMovieFromComment(item.movieId));
+        movie.textContent = `🎬 ${row.movieTitle}`;
+        movie.addEventListener('click', () => openMovieFromComment(row.movieId));
         head.appendChild(movie);
     }
 
@@ -3032,25 +3036,28 @@ function buildCommentBody(item, movieTitle) {
     if (translated && translated.text !== item.text) {
         const line = document.createElement('p');
         line.className = 'comment-translation';
-        line.textContent = `🌐 ${translated.text}`;
+        // A comment longer than the endpoint accepts was translated from its
+        // opening only; the ellipsis says the translation stops short.
+        const clipped = item.text.length > MAX_TRANSLATE_CHARS ? ' …' : '';
+        line.textContent = `🌐 ${translated.text}${clipped}`;
         wrapper.appendChild(line);
     }
 
-    wrapper.appendChild(buildActions(item, Boolean(movieTitle)));
+    wrapper.appendChild(buildActions(item, row));
     return wrapper;
 }
 
 // The per-comment action row. Replies are flat under their comment in the
 // data, so only a top-level comment can be replied to.
-function buildActions(item, isTopLevel) {
+function buildActions(item, row) {
     const actions = document.createElement('div');
     actions.className = 'comment-actions';
 
-    if (isTopLevel) {
-        actions.appendChild(actionButton('Reply', 'btn-secondary', () => openReplyDialog(item)));
+    if (item === row) {
+        actions.appendChild(actionButton('Reply', 'btn-secondary', () => openReplyDialog(row)));
     }
     // btn-danger, matching the Delete button on movie cards.
-    actions.appendChild(actionButton('Delete', 'btn-danger', () => deleteComment(item, isTopLevel)));
+    actions.appendChild(actionButton('Delete', 'btn-danger', () => deleteComment(item, row)));
     return actions;
 }
 
@@ -3083,11 +3090,11 @@ commentLangFilter?.addEventListener('change', renderComments);
 // Strictly additive: every failure path leaves comments rendered with their
 // original text. Nothing here may stop the inbox from displaying.
 
-async function translateBatch(batch) {
+async function translateBatch(batch, targetLang = TARGET_LANG) {
     const response = await fetch('/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: batch, targetLang: TARGET_LANG })
+        body: JSON.stringify({ items: batch, targetLang })
     });
     // A platform error page is HTML, not JSON; report the status instead.
     const data = await response.json().catch(() => ({}));
@@ -3098,8 +3105,13 @@ async function translateBatch(batch) {
 // Cached under its own top-level node, never inside comments/. Push ids are
 // unique database-wide, so one flat node serves comments and replies alike.
 async function cacheTranslations(results) {
+    // A comment deleted while its batch was in flight must not get its
+    // translation written back: the delete removed it, and nothing would ever
+    // clean it up again.
+    const live = new Set(commentRows.flatMap((row) => [row.id, ...row.replies.map((reply) => reply.id)]));
     const writes = {};
     for (const result of results) {
+        if (!live.has(result.id)) continue;
         writes[result.id] = { text: result.text, lang: result.lang, at: Date.now() };
     }
     if (Object.keys(writes).length > 0) {
@@ -3210,21 +3222,24 @@ replyInput?.addEventListener('input', clearReplyPreview);
 replyTranslateBtn?.addEventListener('click', async () => {
     const target = replyTarget;
     const original = replyInput.value.trim();
-    if (!target) return;
+    if (!target || posting) return;
     if (!original) {
         showToast('Type a reply first.');
         return;
     }
 
-    // The language the MODEL detected for the comment, never one guessed from
-    // its script: Persian is written in Arabic script and Ukrainian in
-    // Cyrillic, so guessing would answer them in Arabic and Russian. 'unknown'
-    // is text the model could not place, so there is no language to aim at.
-    const targetLang = translations[target.id]?.lang;
-    if (!targetLang || targetLang === TARGET_LANG || targetLang === 'unknown') {
+    // Any earlier preview is withdrawn first, so Post stays disabled until the
+    // one for this text is showing.
+    clearReplyPreview();
+
+    const detected = translations[target.id]?.lang;
+    const targetLang = replyLanguage(detected);
+    if (!targetLang) {
         showReplyPreview(original);
-        if (!targetLang && needsTranslation(target.text)) {
+        if (!detected && needsTranslation(target.text)) {
             showToast('This comment is not translated yet, so its language is unknown — the reply will post in English.');
+        } else if (detected && detected !== TARGET_LANG) {
+            showToast("This comment's language could not be identified — the reply will post in English.");
         }
         return;
     }
@@ -3236,16 +3251,10 @@ replyTranslateBtn?.addEventListener('click', async () => {
     replyTranslateBtn.disabled = true;
     replyTranslateBtn.textContent = 'Translating...';
     try {
-        const response = await fetch('/api/translate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: [{ id: 'reply', text: original }], targetLang })
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error || `Translate failed (${response.status})`);
+        const [reply] = await translateBatch([{ id: 'reply', text: original }], targetLang);
         if (!stillCurrent()) return;
 
-        const translated = data.items?.[0]?.text || '';
+        const translated = reply?.text || '';
         showReplyPreview(formatAdminReply(translated, original));
         if (!translated.trim() || translated.trim() === original) {
             showToast("Couldn't translate this reply — the preview shows it will post in English.");
@@ -3262,9 +3271,21 @@ replyTranslateBtn?.addEventListener('click', async () => {
     }
 });
 
+// While a post is in flight nothing in the dialog may change what it sends or
+// start a second post: Post is only ever re-enabled for a preview on screen.
+let posting = false;
+
+function setReplyBusy(busy) {
+    posting = busy;
+    replyInput.disabled = busy;
+    replyTranslateBtn.disabled = busy;
+    replyPostBtn.disabled = busy || !replyBody;
+}
+
 replyPostBtn?.addEventListener('click', async () => {
     const target = replyTarget;
-    if (!target || !replyBody) return;
+    const body = replyBody;
+    if (posting || !target || !body) return;
 
     // A comment deleted since the dialog opened would get a replies node with
     // nothing else beside it — a blank ghost comment in the app.
@@ -3274,11 +3295,11 @@ replyPostBtn?.addEventListener('click', async () => {
         return;
     }
 
-    replyPostBtn.disabled = true;
+    setReplyBusy(true);
     replyPostBtn.textContent = 'Posting...';
     try {
         await push(ref(db, `comments/${target.movieId}/${target.id}/replies`), {
-            text: replyBody,
+            text: body,
             timestamp: Date.now(),
             userName: ADMIN_NAME,
             // Inert in the consumer app today; lets a verified badge be added
@@ -3286,12 +3307,14 @@ replyPostBtn?.addEventListener('click', async () => {
             isAdmin: true
         });
         showToast('Reply posted.');
-        closeReplyDialog();
+        // The admin may have moved to another comment meanwhile. Only the
+        // dialog this reply came from is closed; another's draft is kept.
+        if (replyTarget === target) closeReplyDialog();
     } catch (error) {
         console.error('Posting reply failed:', error);
         showToast(`Could not post reply: ${error.message}`);
-        replyPostBtn.disabled = false;
     } finally {
+        setReplyBusy(false);
         replyPostBtn.textContent = 'Post reply';
     }
 });
@@ -3301,45 +3324,46 @@ replyPostBtn?.addEventListener('click', async () => {
 // A native confirm(), matching confirmDelete for movies: the pattern this
 // codebase uses. (#delete-modal in index.html is unwired markup.)
 
-async function deleteComment(item, isTopLevel) {
-    // A flattened reply does not carry its movie; its parent comment does.
-    const parent = isTopLevel
-        ? item
-        : commentRows.find((row) => row.replies.some((reply) => reply.id === item.id));
-    if (!parent) {
-        showToast('That comment is already gone.');
+// One line, capped. A long or multi-line name or translation must not push the
+// warning out of a dialog the browser truncates, or fake extra lines in it.
+function forDialog(text, limit) {
+    const line = String(text).replace(/\s+/g, ' ').trim();
+    return line.length > limit ? `${line.slice(0, limit)}…` : line;
+}
+
+async function deleteComment(item, row) {
+    const isComment = item === row;
+
+    // The paths come from comments.js, where a key that could widen the
+    // delete is refused rather than written.
+    let writes;
+    try {
+        writes = deletionWrites(item, row);
+    } catch (error) {
+        console.error('Delete refused:', error);
+        showToast(error.message);
         return;
     }
 
-    const kind = isTopLevel ? 'comment' : 'reply';
-    const excerpt = item.text.length > 120 ? `${item.text.slice(0, 120)}…` : item.text;
+    // Deleting a comment takes its replies with it, which the UI does not
+    // show. Stated first, so no amount of text below can push it out of view.
+    const replyCount = isComment ? row.replies.length : 0;
+    const cascade = replyCount > 0
+        ? `This also deletes its ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}.\n\n`
+        : '';
     // The admin often cannot read the original, so its translation is shown too.
     const translated = foreignTranslation(item);
-    const meaning = translated ? `\n🌐 ${translated.text}` : '';
-    // Deleting a comment takes its replies with it, which the UI does not show.
-    const replyCount = isTopLevel ? item.replies.length : 0;
-    const cascade = replyCount > 0
-        ? `\n\nThis also deletes its ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}.`
-        : '';
+    const meaning = translated ? `\n🌐 ${forDialog(translated.text, 160)}` : '';
 
-    if (!confirm(`Delete this ${kind} by ${item.userName}?\n\n"${excerpt}"${meaning}${cascade}\n\nThis cannot be undone.`)) {
-        return;
-    }
-
-    const path = isTopLevel
-        ? `comments/${item.movieId}/${item.id}`
-        : `comments/${parent.movieId}/${parent.id}/replies/${item.id}`;
-
-    // One atomic multi-path write: the comment or reply, and every cached
-    // translation that belonged to it, go together or not at all.
-    const writes = { [path]: null, [`commentTranslations/${item.id}`]: null };
-    if (isTopLevel) {
-        for (const reply of item.replies) writes[`commentTranslations/${reply.id}`] = null;
-    }
+    const message = `Delete this ${isComment ? 'comment' : 'reply'} by ${forDialog(item.userName, 60)}?\n\n` +
+        `${cascade}"${forDialog(item.text, 120)}"${meaning}\n\nThis cannot be undone.`;
+    if (!confirm(message)) return;
 
     try {
+        // One atomic multi-path write: the comment or reply and every cached
+        // translation that belonged to it go together, or not at all.
         await update(ref(db), writes);
-        showToast(`${isTopLevel ? 'Comment' : 'Reply'} deleted.`);
+        showToast(`${isComment ? 'Comment' : 'Reply'} deleted.`);
     } catch (error) {
         console.error('Deleting failed:', error);
         showToast(`Could not delete: ${error.message}`);

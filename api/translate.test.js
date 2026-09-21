@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import handler, { parseTranslationResponse, reconcile, findEchoes } from './translate.js';
+import handler, { parseTranslationResponse, reconcile, findEchoes, MAX_TEXT_CHARS } from './translate.js';
+import { MAX_TRANSLATE_CHARS } from '../comments.js';
 
 test('parseTranslationResponse reads a clean JSON object', () => {
     const raw = '{"items":[{"id":"c1","lang":"my","text":"Please translate it"}]}';
@@ -332,4 +333,9 @@ test('handler rejects a target language that is not a bare code', async () => {
         await handler({ method: 'POST', body: { items: [{ id: 'a', text: 'x' }], targetLang } }, res);
         assert.equal(res.statusCode, 400, `accepted ${JSON.stringify(targetLang)}`);
     }
+});
+
+test('the client clips to exactly the length this endpoint accepts', () => {
+    // If these drift apart, one long comment blocks its whole batch again.
+    assert.equal(MAX_TRANSLATE_CHARS, MAX_TEXT_CHARS);
 });

@@ -66,6 +66,16 @@ export function detectScript(text) {
     return needsTranslation(value) ? 'unknown' : 'empty';
 }
 
+// Text and names are made strings rather than trusted, for the same reason as
+// timestamps below. They are shown to the admin and sent to the translator:
+// a number keeps its digits, and anything else — an object, an array — is
+// dropped rather than rendered as "[object Object]" or sent as JSON.
+function toText(value) {
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    return '';
+}
+
 // Timestamps are normalized rather than trusted. The database is schemaless
 // and another client version may have written a string; Number('x') is NaN,
 // and a NaN in a comparator silently stops ordering anything — a single
@@ -93,8 +103,8 @@ function flattenReplies(replies) {
         .filter(([, reply]) => reply && typeof reply === 'object')
         .map(([replyId, reply]) => ({
             id: replyId,
-            text: reply.text || '',
-            userName: reply.userName || 'Anonymous',
+            text: toText(reply.text),
+            userName: toText(reply.userName) || 'Anonymous',
             timestamp: toTimestamp(reply.timestamp),
             isAdmin: reply.isAdmin === true
         }))
@@ -125,8 +135,8 @@ export function flattenComments(tree, moviesById = new Map()) {
                 // to, so the tree's own shape is the safer source.
                 movieId,
                 movieTitle: moviesById.get(movieId)?.title || 'Unknown movie',
-                text: comment.text || '',
-                userName: comment.userName || 'Anonymous',
+                text: toText(comment.text),
+                userName: toText(comment.userName) || 'Anonymous',
                 timestamp: toTimestamp(comment.timestamp),
                 // Strict: the database is unauthenticated, so this holds
                 // whatever anyone wrote. A truthy non-boolean must not light up
@@ -139,6 +149,20 @@ export function flattenComments(tree, moviesById = new Map()) {
 
     rows.sort((a, b) => (b.timestamp - a.timestamp) || byId(a, b));
     return rows;
+}
+
+// The translate endpoint's per-item cap: MAX_TEXT_CHARS in api/translate.js, and
+// a test keeps the two equal. The endpoint rejects a whole batch over a single
+// oversized item, and batches form in the same order on every load, so one
+// long comment would otherwise stop its 24 neighbours from ever translating.
+export const MAX_TRANSLATE_CHARS = 500;
+
+// Text cut to what the endpoint accepts. Measured in UTF-16 units, as the
+// endpoint measures it, and never cut through the middle of an emoji.
+export function clipForTranslation(text) {
+    if (text.length <= MAX_TRANSLATE_CHARS) return text;
+    const clipped = text.slice(0, MAX_TRANSLATE_CHARS);
+    return /[\uD800-\uDBFF]$/.test(clipped) ? clipped.slice(0, -1) : clipped;
 }
 
 // Every comment and reply still needing a translation fetched.
@@ -156,7 +180,7 @@ export function collectTranslatable(rows, cache = {}) {
             // Firebase, and cache['constructor'] is truthy on every object,
             // which would silently skip translating that item.
             if (Object.hasOwn(cache, item.id)) continue;
-            pending.push({ id: item.id, text: item.text });
+            pending.push({ id: item.id, text: clipForTranslation(item.text) });
         }
     }
 
@@ -192,6 +216,46 @@ export function formatAdminReply(translation, original) {
 
     if (!translated || translated === source) return source;
     return `${translated}${REPLY_SEPARATOR}${source}`;
+}
+
+// Codes that name no language: the model's 'unknown', and the ISO codes for
+// undetermined, no linguistic content, and multiple languages.
+const NOT_A_LANGUAGE = new Set(['unknown', 'und', 'zxx', 'mul']);
+
+// The language to translate an admin reply into, or null to post it as
+// written. Only ever the language the model detected for the comment — never
+// one guessed from its script, which would answer Persian in Arabic.
+export function replyLanguage(detectedLang) {
+    if (!detectedLang || detectedLang === TARGET_LANG || NOT_A_LANGUAGE.has(detectedLang)) return null;
+    return detectedLang;
+}
+
+// Realtime Database keys are never empty and never contain these characters,
+// but they are checked, not assumed: they come from an unauthenticated
+// database, and Firebase silently drops empty path segments, so a blank key
+// would turn "comments/m/c" into "comments/m" — every comment on the movie.
+function isSafeKey(key) {
+    return typeof key === 'string' && key.length > 0 && !/[\/.#$[\]]/.test(key);
+}
+
+// The multi-path write that deletes a comment or a reply together with every
+// cached translation that belonged to it. `row` is the top-level comment;
+// `item` is that comment itself or one of its replies.
+export function deletionWrites(item, row) {
+    const isComment = item === row;
+    const replies = isComment ? row.replies : [];
+    const keys = [row.movieId, row.id, item.id, ...replies.map((reply) => reply.id)];
+    if (!keys.every(isSafeKey)) {
+        throw new Error('Refusing to delete: a key in its path is malformed');
+    }
+
+    const path = isComment
+        ? `comments/${row.movieId}/${row.id}`
+        : `comments/${row.movieId}/${row.id}/replies/${item.id}`;
+
+    const writes = { [path]: null, [`commentTranslations/${item.id}`]: null };
+    for (const reply of replies) writes[`commentTranslations/${reply.id}`] = null;
+    return writes;
 }
 
 // Runs translation for whatever is pending, one batch at a time, never two

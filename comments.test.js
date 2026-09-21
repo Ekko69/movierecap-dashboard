@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { detectScript, needsTranslation, TARGET_LANG, ADMIN_NAME, flattenComments, collectTranslatable, batchItems, formatAdminReply, createTranslationScheduler } from './comments.js';
+import { detectScript, needsTranslation, TARGET_LANG, ADMIN_NAME, flattenComments, collectTranslatable, batchItems, formatAdminReply, createTranslationScheduler,
+    MAX_TRANSLATE_CHARS, clipForTranslation, replyLanguage, deletionWrites } from './comments.js';
 
 test('detectScript names the scripts present in the live data', () => {
     assert.equal(detectScript('ဘာသာပြန်ပေးပါ'), 'myanmar');
@@ -502,4 +503,82 @@ test('scheduler survives an error handler that throws', async () => {
     });
     await scheduler.run();
     assert.equal(scheduler.isRunning(), false);
+});
+
+test('flattenComments makes text and names strings whatever the database holds', () => {
+    // Schemaless and unauthenticated: any client can write any shape here.
+    const tree = { m: { c1: {
+        text: { nested: true }, userName: 42, timestamp: 1,
+        replies: { r1: { text: 7, userName: ['x'], timestamp: 2 } }
+    } } };
+    const [row] = flattenComments(tree);
+    assert.equal(row.text, '');
+    assert.equal(row.userName, '42');
+    assert.equal(row.replies[0].text, '7');
+    assert.equal(row.replies[0].userName, 'Anonymous');
+});
+
+test('collectTranslatable clips text the endpoint would reject whole', () => {
+    // One over-long comment used to fail its entire batch of 25, on every load.
+    const long = 'ab'.repeat(400);
+    const [item] = collectTranslatable([{ id: 'c1', text: long, isAdmin: false, replies: [] }], {});
+    assert.equal(item.text, long.slice(0, MAX_TRANSLATE_CHARS));
+});
+
+test('clipForTranslation leaves text within the cap alone', () => {
+    const exact = 'x'.repeat(MAX_TRANSLATE_CHARS);
+    assert.equal(clipForTranslation(exact), exact);
+    assert.equal(clipForTranslation('hi'), 'hi');
+});
+
+test('clipForTranslation never cuts an emoji in half', () => {
+    // The emoji's two UTF-16 halves straddle the cap; half an emoji is not text.
+    const text = 'a'.repeat(MAX_TRANSLATE_CHARS - 1) + '💜tail';
+    assert.equal(clipForTranslation(text), 'a'.repeat(MAX_TRANSLATE_CHARS - 1));
+});
+
+test('replyLanguage uses only a real language other than the admin\'s', () => {
+    assert.equal(replyLanguage('my'), 'my');
+    assert.equal(replyLanguage('ar'), 'ar');
+    for (const code of [undefined, '', 'en', 'unknown', 'und', 'zxx', 'mul']) {
+        assert.equal(replyLanguage(code), null, `translated a reply into ${JSON.stringify(code)}`);
+    }
+});
+
+test('deletionWrites removes a comment and every translation under it', () => {
+    const row = { id: 'c1', movieId: 'm1', replies: [{ id: 'r1' }, { id: 'r2' }] };
+    assert.deepEqual(deletionWrites(row, row), {
+        'comments/m1/c1': null,
+        'commentTranslations/c1': null,
+        'commentTranslations/r1': null,
+        'commentTranslations/r2': null
+    });
+});
+
+test('deletionWrites removes only the one reply', () => {
+    const reply = { id: 'r2' };
+    const row = { id: 'c1', movieId: 'm1', replies: [{ id: 'r1' }, reply] };
+    assert.deepEqual(deletionWrites(reply, row), {
+        'comments/m1/c1/replies/r2': null,
+        'commentTranslations/r2': null
+    });
+});
+
+test('deletionWrites refuses any key that could widen the delete', () => {
+    // Firebase drops empty path segments: a blank comment id would make this
+    // one comment's path the whole movie's.
+    const ok = { id: 'c1', movieId: 'm1', replies: [] };
+    for (const bad of [
+        { ...ok, id: '' },
+        { ...ok, movieId: '' },
+        { ...ok, id: 'a/b' },
+        { ...ok, id: 'a.b' },
+        { ...ok, id: 42 }
+    ]) {
+        assert.throws(() => deletionWrites(bad, bad), /malformed/, JSON.stringify(bad));
+    }
+    const withBlankReply = { ...ok, replies: [{ id: '' }] };
+    assert.throws(() => deletionWrites(withBlankReply, withBlankReply), /malformed/);
+    const blankReply = { id: '' };
+    assert.throws(() => deletionWrites(blankReply, { ...ok, replies: [blankReply] }), /malformed/);
 });

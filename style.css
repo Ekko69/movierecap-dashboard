@@ -1883,3 +1883,10 @@ textarea:focus {
 .main-content.is-comments-view .header-button-group {
     display: none !important;
 }
+
+/* A long URL in the comment being replied to wraps rather than widening the
+   dialog, as it already does in the inbox. */
+.reply-context-text,
+.reply-context-translation {
+    word-break: break-word;
+}
