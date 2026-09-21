@@ -175,8 +175,8 @@ export function fillDaily(rows) {
 
 // Rows that name no movie or category: events logged before a dimension was
 // registered come back as "(not set)", and GA folds overflow into "(other)",
-// which notes.otherRow reports separately. The where-lists keep both, because
-// there an unknown country or language is still a real group of users.
+// which notes.otherRow reports separately. The where-lists keep both: in those
+// lists an unknown country or language is still a real group of users.
 const isUnset = (value) => value === '' || value === '(not set)' || value === '(other)';
 
 // {name: count} from single-dimension rows, summing any repeats. Counted in a
