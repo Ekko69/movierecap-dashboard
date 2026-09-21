@@ -78,8 +78,8 @@ would make every trend end in a false dip.
 
 In the movie table:
 
-- **One row per title.** A title held by two library movies gets one row, the first copy's
-  thumbnail, a **"2 copies"** badge, and the combined figures GA recorded for it. Splitting them
+- **One row per title.** A title held by two library movies gets one row, a thumbnail from
+  whichever copy has one, a **"2 copies"** badge, and the combined figures GA recorded for it. Splitting them
   between the copies would be invented.
 - **Titles are matched with surrounding spaces ignored**, on both sides.
 - **Completion rate** is completions ÷ plays, shown as "—" when a title has no plays.
