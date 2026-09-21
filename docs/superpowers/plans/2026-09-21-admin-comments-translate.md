@@ -1111,7 +1111,7 @@ Before the closing `</body>`, alongside the other overlays, add:
                     <p id="reply-context-translation" class="reply-context-translation"></p>
                 </div>
 
-                <label class="form-label" for="reply-input">Your reply (English)</label>
+                <label class="section-label" for="reply-input">Your reply (English)</label>
                 <textarea id="reply-input" class="reply-input" rows="3" placeholder="Type your reply..."></textarea>
 
                 <div id="reply-preview" class="reply-preview hidden">
@@ -1119,7 +1119,7 @@ Before the closing `</body>`, alongside the other overlays, add:
                     <pre id="reply-preview-text" class="reply-preview-text"></pre>
                 </div>
 
-                <div class="modal-actions">
+                <div class="reply-actions">
                     <button type="button" id="reply-cancel" class="btn btn-ghost">Cancel</button>
                     <button type="button" id="reply-translate" class="btn btn-secondary">🌐 Translate &amp; preview</button>
                     <button type="button" id="reply-post" class="btn btn-primary" disabled>Post reply</button>
@@ -1345,6 +1345,13 @@ Append to `style.css`:
     letter-spacing: 0.05em;
 }
 
+.reply-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 4px;
+}
+
 .reply-preview-text {
     color: var(--text-primary);
     font-family: var(--font-family);
@@ -1393,13 +1400,27 @@ import {
 
 - [ ] **Step 2: Build a movie lookup in the existing movies listener**
 
-In the `onValue(moviesRef, ...)` handler around `app.js:2169`, after `existingMoviesByVideoId` is assigned and before `applyFiltersAndRender()`, add:
+In the `onValue(moviesRef, ...)` handler around `app.js:2169`, after `existingMoviesByVideoId` is assigned, add:
 
 ```js
     // Comment rows carry a movieId only; the inbox shows titles.
     moviesById = new Map(allMovies.map((movie) => [movie.id, movie]));
-    renderComments();
 ```
+
+Then, AFTER the existing `applyFiltersAndRender();` line at the end of that same handler, add:
+
+```js
+    // After the grid, and isolated: nothing in the comments view may stop the
+    // movies grid from rendering. Re-flattening here corrects titles when the
+    // movies arrive after the comments did.
+    try {
+        rebuildComments();
+    } catch (error) {
+        console.error('Refreshing comment titles failed:', error);
+    }
+```
+
+The order matters. `applyFiltersAndRender()` must run first so the movies grid renders even if something in the comments view throws.
 
 Declare it alongside the other module-level caches (near `existingMoviesByKey`):
 
@@ -1407,7 +1428,7 @@ Declare it alongside the other module-level caches (near `existingMoviesByKey`):
 let moviesById = new Map();
 ```
 
-`renderComments()` is defined in Step 4. It must tolerate being called before comments have loaded.
+`rebuildComments()` is defined in Step 4. It must tolerate being called before comments have loaded.
 
 - [ ] **Step 3: Add the view router**
 
@@ -1456,13 +1477,7 @@ navDashboard?.addEventListener('click', () => showView('movies'));
 navComments?.addEventListener('click', () => showView('comments'));
 ```
 
-**Before writing this, confirm the real name of the function that renders the last-added panel.** Run:
-
-```bash
-grep -n "lastAddedPanel" app.js
-```
-
-Use whatever function assigns its content; the plan assumes `renderLastAdded()`. If it is named differently, substitute the real name. If no such function exists and the panel is only populated inside the movies `onValue`, drop the `else` branch entirely and leave the panel hidden until the next data change.
+`renderLastAdded()` is the real function, at `app.js:2046`.
 
 - [ ] **Step 4: Add the comments listener and render**
 
@@ -1476,15 +1491,27 @@ const commentsSummary = document.getElementById('comments-summary');
 const commentSearch = document.getElementById('comment-search');
 const commentLangFilter = document.getElementById('comment-lang-filter');
 
+// The raw tree is kept, not just the rows built from it. Rows carry movie
+// titles, and the two listeners arrive in no fixed order: comments are a
+// fraction of the size of movies and usually land first, when moviesById is
+// still empty. Rows built then would read "Unknown movie" until the next
+// comment write. Rebuilding from the tree whenever either side changes keeps
+// the titles right.
+let commentsTree = null;
 let commentRows = [];
 let translations = {};      // pushId -> { text, lang, at }
 let commentsLoaded = false;
 
+function rebuildComments() {
+    commentRows = flattenComments(commentsTree, moviesById);
+    renderComments();
+}
+
 const commentsRef = ref(db, 'comments');
 onValue(commentsRef, (snapshot) => {
     commentsLoaded = true;
-    commentRows = flattenComments(snapshot.val(), moviesById);
-    renderComments();
+    commentsTree = snapshot.val();
+    rebuildComments();
     translatePending();
 });
 
@@ -1628,24 +1655,18 @@ function buildCommentBody(item, movieTitle) {
     return wrapper;
 }
 
+// openForm is the same entry point the movie cards and the last-added panel
+// use. Its panel is a fixed overlay outside .content-body, so it opens over
+// the inbox and the admin never loses their place in the comments.
 function openMovieFromComment(movieId) {
     const movie = moviesById.get(movieId);
     if (!movie) {
         showToast('That movie has been deleted.');
         return;
     }
-    showView('movies');
-    editMovie(movie.id);
+    openForm(movie);
 }
 ```
-
-**Before writing `openMovieFromComment`, confirm the edit entry point.** Run:
-
-```bash
-grep -n "function editMovie\|editMovie(" app.js | head
-```
-
-Use the real function and its real signature (it may take the whole movie object rather than an id). If no single-argument entry point exists, replace the body with `showToast('Open it from the Movies list.')` and move on — this is a convenience, not a requirement.
 
 `buildActions` is written in Task 9.
 
