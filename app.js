@@ -3049,6 +3049,8 @@ function buildActions(item, isTopLevel) {
     if (isTopLevel) {
         actions.appendChild(actionButton('Reply', 'btn-secondary', () => openReplyDialog(item)));
     }
+    // btn-danger, matching the Delete button on movie cards.
+    actions.appendChild(actionButton('Delete', 'btn-danger', () => deleteComment(item, isTopLevel)));
     return actions;
 }
 
@@ -3293,3 +3295,53 @@ replyPostBtn?.addEventListener('click', async () => {
         replyPostBtn.textContent = 'Post reply';
     }
 });
+
+// --- Deleting ---
+//
+// A native confirm(), matching confirmDelete for movies: the pattern this
+// codebase uses. (#delete-modal in index.html is unwired markup.)
+
+async function deleteComment(item, isTopLevel) {
+    // A flattened reply does not carry its movie; its parent comment does.
+    const parent = isTopLevel
+        ? item
+        : commentRows.find((row) => row.replies.some((reply) => reply.id === item.id));
+    if (!parent) {
+        showToast('That comment is already gone.');
+        return;
+    }
+
+    const kind = isTopLevel ? 'comment' : 'reply';
+    const excerpt = item.text.length > 120 ? `${item.text.slice(0, 120)}…` : item.text;
+    // The admin often cannot read the original, so its translation is shown too.
+    const translated = foreignTranslation(item);
+    const meaning = translated ? `\n🌐 ${translated.text}` : '';
+    // Deleting a comment takes its replies with it, which the UI does not show.
+    const replyCount = isTopLevel ? item.replies.length : 0;
+    const cascade = replyCount > 0
+        ? `\n\nThis also deletes its ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}.`
+        : '';
+
+    if (!confirm(`Delete this ${kind} by ${item.userName}?\n\n"${excerpt}"${meaning}${cascade}\n\nThis cannot be undone.`)) {
+        return;
+    }
+
+    const path = isTopLevel
+        ? `comments/${item.movieId}/${item.id}`
+        : `comments/${parent.movieId}/${parent.id}/replies/${item.id}`;
+
+    // One atomic multi-path write: the comment or reply, and every cached
+    // translation that belonged to it, go together or not at all.
+    const writes = { [path]: null, [`commentTranslations/${item.id}`]: null };
+    if (isTopLevel) {
+        for (const reply of item.replies) writes[`commentTranslations/${reply.id}`] = null;
+    }
+
+    try {
+        await update(ref(db), writes);
+        showToast(`${isTopLevel ? 'Comment' : 'Reply'} deleted.`);
+    } catch (error) {
+        console.error('Deleting failed:', error);
+        showToast(`Could not delete: ${error.message}`);
+    }
+}
