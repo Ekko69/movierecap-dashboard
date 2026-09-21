@@ -243,6 +243,17 @@ and open the app, before depending on the flag.
 good Burmese translation from a bad one. The preview-before-post step and keeping the
 English original in the posted body are the mitigations; neither is a guarantee.
 
+**Cross-comment prompt injection is reduced, not eliminated.** Translation batches up to 25
+comments into one request, so text in one comment can try to steer the model's answer for
+another — making an innocent comment appear to say something it doesn't. Replies are checked
+against the request (only requested ids, each exactly once), and the prompt marks comment text
+as untrusted. But if a hostile comment gets the model to translate a *requested* id wrongly,
+nothing downstream can detect it: the admin can't read the original, which is why they need the
+translation in the first place. Translating one comment per request would remove the risk at
+about 25× the request count. For now the translation is shown as secondary to the original and
+labelled as machine output, and it should be treated as a hint, not evidence, before deleting
+anything.
+
 ## Out of scope
 
 The database is world-readable without authentication — all 274 comments are retrievable

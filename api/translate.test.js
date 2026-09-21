@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseTranslationResponse } from './translate.js';
+import handler, { parseTranslationResponse, reconcile } from './translate.js';
 
 test('parseTranslationResponse reads a clean JSON object', () => {
     const raw = '{"items":[{"id":"c1","lang":"my","text":"Please translate it"}]}';
@@ -54,4 +54,133 @@ test('parseTranslationResponse throws a describable error on junk', () => {
     assert.throws(() => parseTranslationResponse('no json at all'), /no JSON object/);
     assert.throws(() => parseTranslationResponse('{"items": [oops}'), /invalid JSON/);
     assert.throws(() => parseTranslationResponse('{"nope":1}'), /no items array/);
+});
+
+test('reconcile keeps only ids that were requested', () => {
+    const requested = [{ id: 'a', text: 'x' }, { id: 'b', text: 'y' }];
+    const returned = [
+        { id: 'a', lang: 'en', text: 'x' },
+        { id: 'c', lang: 'en', text: 'an answer for an id nobody sent' }
+    ];
+    assert.deepEqual(reconcile(requested, returned), {
+        items: [{ id: 'a', lang: 'en', text: 'x' }],
+        missing: ['b']
+    });
+});
+
+test('reconcile drops an id the model answered more than once', () => {
+    // Two answers for one comment means one is not the translation, and there
+    // is no telling which — so neither is trusted and the comment is retried.
+    const requested = [{ id: 'a', text: 'x' }, { id: 'b', text: 'y' }];
+    const returned = [
+        { id: 'a', lang: 'en', text: 'real' },
+        { id: 'a', lang: 'en', text: 'forged' },
+        { id: 'b', lang: 'en', text: 'y' }
+    ];
+    assert.deepEqual(reconcile(requested, returned), {
+        items: [{ id: 'b', lang: 'en', text: 'y' }],
+        missing: ['a']
+    });
+});
+
+test('reconcile reports nothing missing for a complete reply', () => {
+    assert.deepEqual(reconcile([{ id: 'a', text: 'x' }], [{ id: 'a', lang: 'my', text: 'hi' }]), {
+        items: [{ id: 'a', lang: 'my', text: 'hi' }],
+        missing: []
+    });
+});
+
+// A stand-in for Vercel's response object: records what the handler sent.
+function fakeRes() {
+    return {
+        statusCode: 0,
+        body: null,
+        status(code) { this.statusCode = code; return this; },
+        json(body) { this.body = body; return this; }
+    };
+}
+
+function restoreEnv(name, value) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+}
+
+// Answers the OpenAI call with a canned reply and leaves no Claude key, so the
+// handler's own logic is exercised without touching the network. Everything is
+// restored when the test ends.
+function stubOpenAI(t, items) {
+    const saved = {
+        fetch: globalThis.fetch,
+        openai: process.env.OPENAI_API_KEY,
+        anthropic: process.env.ANTHROPIC_API_KEY
+    };
+    process.env.OPENAI_API_KEY = 'test-key';
+    delete process.env.ANTHROPIC_API_KEY;
+    globalThis.fetch = async () => ({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: JSON.stringify({ items }) } }] })
+    });
+    for (const level of ['info', 'warn', 'error']) t.mock.method(console, level, () => {});
+
+    t.after(() => {
+        globalThis.fetch = saved.fetch;
+        restoreEnv('OPENAI_API_KEY', saved.openai);
+        restoreEnv('ANTHROPIC_API_KEY', saved.anthropic);
+    });
+}
+
+test('handler rejects more items than one batch may hold', async () => {
+    const res = fakeRes();
+    const items = Array.from({ length: 26 }, (_, i) => ({ id: `c${i}`, text: 'x' }));
+    await handler({ method: 'POST', body: { items } }, res);
+    assert.equal(res.statusCode, 400);
+    assert.match(res.body.error, /at most 25/);
+});
+
+test('handler rejects an item without a string id and text', async () => {
+    for (const bad of [null, { id: 1, text: 'x' }, { id: 'a' }, { text: 'x' }]) {
+        const res = fakeRes();
+        await handler({ method: 'POST', body: { items: [bad] } }, res);
+        assert.equal(res.statusCode, 400, `accepted ${JSON.stringify(bad)}`);
+    }
+});
+
+test('handler rejects text over the length cap', async () => {
+    const res = fakeRes();
+    await handler({ method: 'POST', body: { items: [{ id: 'a', text: 'x'.repeat(501) }] } }, res);
+    assert.equal(res.statusCode, 400);
+    assert.match(res.body.error, /500 characters/);
+});
+
+test('handler accepts text exactly at the length cap', async (t) => {
+    stubOpenAI(t, [{ id: 'a', lang: 'en', text: 'ok' }]);
+    const res = fakeRes();
+    await handler({ method: 'POST', body: { items: [{ id: 'a', text: 'x'.repeat(500) }] } }, res);
+    assert.equal(res.statusCode, 200);
+});
+
+test('handler returns only requested ids and names the missing ones', async (t) => {
+    // The reply drops 'b' and invents 'zzz'. Neither may pass as a success.
+    stubOpenAI(t, [
+        { id: 'a', lang: 'my', text: 'hello' },
+        { id: 'zzz', lang: 'en', text: 'never requested' }
+    ]);
+    const res = fakeRes();
+    await handler({ method: 'POST', body: { items: [{ id: 'a', text: 'x' }, { id: 'b', text: 'y' }] } }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.body.items.map(item => item.id), ['a']);
+    assert.deepEqual(res.body.missing, ['b']);
+    assert.equal(res.body.provider, 'openai');
+});
+
+test('handler treats a reply with no usable ids as a failure', async (t) => {
+    // Nothing requested came back. With no Claude key to fall back to, that
+    // must be an error — not a 200 carrying an empty list.
+    stubOpenAI(t, [{ id: 'zzz', lang: 'en', text: 'never requested' }]);
+    const res = fakeRes();
+    await handler({ method: 'POST', body: { items: [{ id: 'a', text: 'x' }] } }, res);
+
+    assert.equal(res.statusCode, 500);
+    assert.match(res.body.error, /no usable items/);
 });

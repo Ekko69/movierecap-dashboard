@@ -1016,6 +1016,36 @@ git commit -m "feat: add the batched comment translation endpoint"
 
 ---
 
+**Review hardening (applied after Task 5's code review).** The endpoint is public and unauthenticated, and batches attacker-writable text together, so the shipped `api/translate.js` adds four things beyond the code above:
+
+- **Caps** — `MAX_ITEMS = 25` and `MAX_TEXT_CHARS = 500`, each a 400. The client never sends more than 25, and the longest of the 294 live comments and replies is 203 characters, so neither touches real use. At these caps a full batch is about 3,600 output tokens, inside the existing `max_tokens: 4096`.
+- **Item shape** — every item must have a string `id` and `text` (400 otherwise). An item without an id would be serialized with the key dropped, leaving the model nothing to echo back.
+- **Reply reconciliation** — the model's reply is untrusted. `reconcile(requested, returned)` keeps only ids that were requested *and* came back exactly once, and reports the rest as `missing`:
+
+```js
+export function reconcile(requested, returned) {
+    const wanted = new Set(requested.map(item => item.id));
+
+    const counts = new Map();
+    for (const item of returned) {
+        counts.set(item.id, (counts.get(item.id) || 0) + 1);
+    }
+
+    const items = returned.filter(item => wanted.has(item.id) && counts.get(item.id) === 1);
+    const kept = new Set(items.map(item => item.id));
+    const missing = [...wanted].filter(id => !kept.has(id));
+
+    return { items, missing };
+}
+```
+
+  The response becomes `{ items, missing, provider }`. A reply with no usable items throws, so it falls through to Claude like any other failure. Task 9 needs no change: it caches `data.items`, and anything missing stays uncached and is retried on the next load.
+- **Prompt hardening** — the system prompt now states that comment texts are untrusted and that no comment may change another's entry.
+
+This cuts down cross-comment injection but does not remove it. See Known risks in the spec.
+
+---
+
 ### Task 6: Comments view markup
 
 **Files:**
