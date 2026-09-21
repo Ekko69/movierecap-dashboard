@@ -571,6 +571,26 @@ test('batchItems handles an empty list and rejects a nonsense size', () => {
     assert.throws(() => batchItems([{ id: 'a', text: 'x' }], 0), /at least 1/);
 });
 
+test('batchItems rejects a size that is not a whole number', () => {
+    const items = [{ id: 'a', text: 'x' }];
+    // NaN slid past a `size < 1` guard and silently returned zero items.
+    assert.throws(() => batchItems(items, NaN), /at least 1/);
+    assert.throws(() => batchItems(items, 2.5), /at least 1/);
+    assert.throws(() => batchItems(items, Infinity), /at least 1/);
+});
+
+test('batchItems handles a size of one', () => {
+    const items = Array.from({ length: 3 }, (_, i) => ({ id: `c${i}`, text: 'x' }));
+    assert.deepEqual(batchItems(items, 1).map(b => b.length), [1, 1, 1]);
+});
+
+test('collectTranslatable is not fooled by an id that names an Object method', () => {
+    // cache is a plain object straight from Firebase, and cache['constructor']
+    // is truthy on any object — which would silently skip this item.
+    const rows = [{ id: 'constructor', text: 'hello', isAdmin: false, replies: [] }];
+    assert.deepEqual(collectTranslatable(rows, {}), [{ id: 'constructor', text: 'hello' }]);
+});
+
 test('formatAdminReply puts the translation above the English original', () => {
     assert.equal(
         formatAdminReply('ဒေါင်းလုဒ်မရ', "Download isn't available yet."),
@@ -613,7 +633,10 @@ export function collectTranslatable(rows, cache = {}) {
         for (const item of [row, ...(row.replies || [])]) {
             if (item.isAdmin) continue;
             if (!needsTranslation(item.text)) continue;
-            if (cache[item.id]) continue;
+            // Object.hasOwn, not cache[id]: cache is a plain object from
+            // Firebase, and cache['constructor'] is truthy on every object,
+            // which would silently skip translating that item.
+            if (Object.hasOwn(cache, item.id)) continue;
             pending.push({ id: item.id, text: item.text });
         }
     }
@@ -625,7 +648,12 @@ export function collectTranslatable(rows, cache = {}) {
 // inside the model's output budget while making the 274-comment backlog about
 // a dozen calls rather than 274.
 export function batchItems(items, size = 25) {
-    if (size < 1) throw new Error('batch size must be at least 1');
+    // Number.isInteger rather than `size < 1`: NaN < 1 is false, so a NaN size
+    // slipped through and returned a single empty batch — silently translating
+    // nothing at all rather than failing loudly.
+    if (!Number.isInteger(size) || size < 1) {
+        throw new Error('batch size must be a whole number of at least 1');
+    }
 
     const batches = [];
     for (let index = 0; index < items.length; index += size) {
@@ -640,8 +668,8 @@ const REPLY_SEPARATOR = '\n—\n';
 // it immediately, the English original beneath as a fallback for when the
 // translation reads oddly.
 export function formatAdminReply(translation, original) {
-    const source = String(original || '').trim();
-    const translated = String(translation || '').trim();
+    const source = String(original ?? '').trim();
+    const translated = String(translation ?? '').trim();
 
     if (!translated || translated === source) return source;
     return `${translated}${REPLY_SEPARATOR}${source}`;
