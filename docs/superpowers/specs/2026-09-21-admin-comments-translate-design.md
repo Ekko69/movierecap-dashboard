@@ -96,8 +96,10 @@ movie title through a `moviesById` map built from the existing `allMovies` array
 
 Rejected: grouping by movie. With 169 commented movies, new activity is buried behind
 168 collapsed rows. An inbox answers "what came in?", which is the reason to open the
-section. A movie filter and a text search, reusing the existing `.filter-bar` styles,
-cover the "what did this movie get?" case.
+section. A text search over comment text, user names, movie titles *and translations*
+covers the "what did this movie get?" case — typing a title is faster than scrolling a
+169-entry dropdown — and lets the admin search every language in English. A language
+filter narrows to comments in other languages, or to those still awaiting translation.
 
 Replies are flattened as child rows under their parent comment, never as top-level
 inbox entries — a reply out of context is meaningless.

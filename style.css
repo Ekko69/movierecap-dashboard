@@ -1871,3 +1871,15 @@ textarea:focus {
     word-break: break-word;
     margin: 8px 0 0;
 }
+
+/* ---------- View switching ---------- */
+
+/* The comments view hides the movies view's parts from one place, so their
+   own show/hide logic cannot leak through: the last-added panel re-shows
+   itself on every movie write and on a one-minute timer. The movie form is a
+   fixed overlay and is deliberately not listed — it opens over either view. */
+.main-content.is-comments-view .content-body,
+.main-content.is-comments-view .last-added,
+.main-content.is-comments-view .header-button-group {
+    display: none !important;
+}

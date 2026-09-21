@@ -24,6 +24,16 @@ import {
     formatRelativeTime,
     pickLastAdded
 } from './last-added.js';
+import {
+    TARGET_LANG,
+    ADMIN_NAME,
+    detectScript,
+    needsTranslation,
+    flattenComments,
+    collectTranslatable,
+    batchItems,
+    formatAdminReply
+} from './comments.js';
 
 // Firebase Config
 // Firebase Config
@@ -80,6 +90,8 @@ let existingMoviesByKey = new Map();
 // anything is fetched or downloaded. Only movies imported since sourceURL
 // shipped appear here; older records have no source to key on.
 let existingMoviesByVideoId = new Map();
+// Comment rows carry only a movieId; the comments inbox shows titles.
+let moviesById = new Map();
 // Duplicate key the banner was last shown for, so Save does not warn a second time.
 let warnedDuplicateKey = null;
 // Duplicate key the user explicitly dismissed, so the banner stays hidden for it.
@@ -2182,9 +2194,19 @@ onValue(moviesRef, (snapshot) => {
             .map((movie) => [videoIdFromSourceURL(movie.sourceURL), movie])
             .filter(([videoId]) => videoId)
     );
+    moviesById = new Map(allMovies.map((movie) => [movie.id, movie]));
     applyFiltersAndRender();
     if (!movieFormPanel.classList.contains('hidden')) refreshDuplicateWarning();
     renderLastAdded();
+
+    // Last, and isolated: nothing in the comments view may stop the movies
+    // grid from rendering. Re-flattening here corrects comment titles when the
+    // movies arrive after the comments did.
+    try {
+        rebuildComments();
+    } catch (error) {
+        console.error('Refreshing comment titles failed:', error);
+    }
 }, (error) => {
     // Without this the failure is silent: allMovies stays empty, so the duplicate
     // indexes stay empty, and every duplicate check quietly passes.
@@ -2787,4 +2809,331 @@ initBulkYoutube({
     runQueue,
     generateAIThumbnailBlob,
     isAutoAiThumbnailEnabled
+});
+
+// --- View routing ---
+//
+// The dashboard had no view switching before this: the Movies view was the
+// whole page. One class on .main-content decides which view shows (see the
+// .is-comments-view rules in style.css). The Movies view's own parts keep
+// managing their own hidden state — the last-added panel re-shows itself on
+// every movie write and on a one-minute timer — and the class overrides them
+// without touching that logic. #nav-settings stays deliberately unwired.
+
+const mainContent = document.querySelector('.main-content');
+const navDashboard = document.getElementById('nav-dashboard');
+const navComments = document.getElementById('nav-comments');
+const commentsView = document.getElementById('comments-view');
+const pageTitle = document.querySelector('.page-title');
+
+function showView(name) {
+    const isComments = name === 'comments';
+
+    mainContent?.classList.toggle('is-comments-view', isComments);
+    commentsView?.classList.toggle('hidden', !isComments);
+
+    navDashboard?.classList.toggle('active', !isComments);
+    navComments?.classList.toggle('active', isComments);
+
+    if (pageTitle) pageTitle.textContent = isComments ? 'Comments' : 'Dashboard';
+}
+
+navDashboard?.addEventListener('click', () => showView('movies'));
+navComments?.addEventListener('click', () => showView('comments'));
+
+// --- Comments ---
+
+const commentsContainer = document.getElementById('comments-container');
+const commentsSummary = document.getElementById('comments-summary');
+const commentSearch = document.getElementById('comment-search');
+const commentLangFilter = document.getElementById('comment-lang-filter');
+
+// The raw tree is kept, not just the rows built from it. Rows carry movie
+// titles, and the comments and movies listeners arrive in no fixed order:
+// comments are a fraction of the size and usually land first, while
+// moviesById is still empty. Rows built then would read "Unknown movie" until
+// the next comment write, so they are rebuilt whenever either side changes.
+let commentsTree = null;
+let commentRows = [];
+let commentsLoaded = false;
+
+// pushId -> { text, lang, at }, mirrored from commentTranslations/.
+let translations = {};
+let translationsLoaded = false;
+
+function rebuildComments() {
+    commentRows = flattenComments(commentsTree, moviesById);
+    renderComments();
+}
+
+onValue(ref(db, 'comments'), (snapshot) => {
+    commentsTree = snapshot.val();
+    commentsLoaded = true;
+    rebuildComments();
+    translatePending();
+}, (error) => {
+    // Without this a failed read is silent and the spinner turns forever.
+    console.error('[comments] realtime read failed', error);
+    showCommentsMessage(`Could not load comments: ${error.message}`);
+});
+
+onValue(ref(db, 'commentTranslations'), (snapshot) => {
+    translations = snapshot.val() || {};
+    translationsLoaded = true;
+    renderComments();
+    translatePending();
+}, (error) => {
+    // Without the cache there is no knowing what is already translated, and
+    // translating blind would re-pay for every comment on every load. So
+    // translation stays off and comments show in their original language.
+    console.error('[commentTranslations] realtime read failed', error);
+    showToast('Translations unavailable — comments are shown untranslated.');
+});
+
+// A translation worth showing: one exists, and it came from a language other
+// than the admin's own. English comments are cached too — the model is what
+// decides they are English — but restating them would only be noise.
+function foreignTranslation(item) {
+    const cached = translations[item.id];
+    if (!cached || !cached.text || cached.lang === TARGET_LANG) return null;
+    return cached;
+}
+
+function visibleRows() {
+    const term = (commentSearch?.value || '').trim().toLowerCase();
+    const mode = commentLangFilter?.value || 'all';
+
+    return commentRows.filter((row) => {
+        if (term) {
+            // Translations are searched too, so the admin can find a Burmese
+            // comment about downloads by typing "download".
+            const items = [row, ...row.replies];
+            const matches = items.some((item) => [
+                item.text,
+                item.userName,
+                translations[item.id]?.text || ''
+            ].join(' ').toLowerCase().includes(term));
+            if (!matches && !row.movieTitle.toLowerCase().includes(term)) return false;
+        }
+
+        if (mode === 'foreign') return Boolean(foreignTranslation(row));
+        if (mode === 'pending') {
+            return !row.isAdmin && needsTranslation(row.text) && !translations[row.id];
+        }
+        return true;
+    });
+}
+
+function showCommentsMessage(message) {
+    if (!commentsContainer) return;
+    commentsContainer.textContent = '';
+    const note = document.createElement('div');
+    note.className = 'comments-empty';
+    note.textContent = message;
+    commentsContainer.appendChild(note);
+}
+
+function renderComments() {
+    // Until comments arrive the loading spinner stays in place.
+    if (!commentsContainer || !commentsLoaded) return;
+
+    const rows = visibleRows();
+
+    if (commentsSummary) {
+        const replyCount = commentRows.reduce((total, row) => total + row.replies.length, 0);
+        commentsSummary.textContent =
+            `${rows.length} of ${commentRows.length} comments · ${replyCount} replies`;
+    }
+
+    if (rows.length === 0) {
+        showCommentsMessage(commentRows.length === 0 ? 'No comments yet.' : 'No comments match this filter.');
+        return;
+    }
+
+    commentsContainer.textContent = '';
+    for (const row of rows) {
+        commentsContainer.appendChild(buildCommentCard(row));
+    }
+}
+
+function buildCommentCard(row) {
+    const card = document.createElement('div');
+    card.className = 'comment-card';
+    card.appendChild(buildCommentBody(row, row.movieTitle));
+
+    if (row.replies.length > 0) {
+        const thread = document.createElement('div');
+        thread.className = 'comment-replies';
+        for (const reply of row.replies) {
+            const replyEl = buildCommentBody(reply, null);
+            replyEl.classList.add('comment-reply');
+            thread.appendChild(replyEl);
+        }
+        card.appendChild(thread);
+    }
+
+    return card;
+}
+
+// Shared by comments and replies. `movieTitle` is null for replies, which sit
+// under a parent that already names the movie.
+//
+// Every user-authored string goes in through textContent, never innerHTML:
+// this text is written by anonymous users straight into the database.
+function buildCommentBody(item, movieTitle) {
+    const wrapper = document.createElement('div');
+
+    const head = document.createElement('div');
+    head.className = 'comment-head';
+
+    if (movieTitle) {
+        const movie = document.createElement('span');
+        movie.className = 'comment-movie';
+        movie.textContent = `🎬 ${movieTitle}`;
+        movie.addEventListener('click', () => openMovieFromComment(item.movieId));
+        head.appendChild(movie);
+    }
+
+    const user = document.createElement('span');
+    user.className = 'comment-user';
+    user.textContent = item.userName;
+    head.appendChild(user);
+
+    if (item.isAdmin) {
+        const badge = document.createElement('span');
+        badge.className = 'admin-badge';
+        badge.textContent = 'ADMIN';
+        head.appendChild(badge);
+    }
+
+    const time = document.createElement('span');
+    time.className = 'comment-time';
+    time.textContent = formatRelativeTime(item.timestamp, Date.now());
+    head.appendChild(time);
+
+    // The model's language once it has answered; until then the script, as a
+    // hint. Nothing is shown for the admin's own language or plain Latin text.
+    const lang = translations[item.id]?.lang || detectScript(item.text);
+    if (lang && ![TARGET_LANG, 'latin', 'empty'].includes(lang)) {
+        const tag = document.createElement('span');
+        tag.className = 'comment-lang';
+        tag.textContent = lang;
+        head.appendChild(tag);
+    }
+
+    wrapper.appendChild(head);
+
+    const text = document.createElement('p');
+    text.className = 'comment-text';
+    text.textContent = item.text;
+    wrapper.appendChild(text);
+
+    const translated = foreignTranslation(item);
+    if (translated && translated.text !== item.text) {
+        const line = document.createElement('p');
+        line.className = 'comment-translation';
+        line.textContent = `🌐 ${translated.text}`;
+        wrapper.appendChild(line);
+    }
+
+    wrapper.appendChild(buildActions(item, Boolean(movieTitle)));
+    return wrapper;
+}
+
+// The per-comment action row. Reply and Delete are added by the tasks that
+// implement them.
+function buildActions(item, isTopLevel) {
+    const actions = document.createElement('div');
+    actions.className = 'comment-actions';
+    return actions;
+}
+
+// openForm is the same entry point the movie cards and the last-added panel
+// use. Its panel is a fixed overlay outside .content-body, so it opens over
+// the inbox and the admin never loses their place in the comments.
+function openMovieFromComment(movieId) {
+    const movie = moviesById.get(movieId);
+    if (!movie) {
+        showToast('That movie has been deleted.');
+        return;
+    }
+    openForm(movie);
+}
+
+commentSearch?.addEventListener('input', renderComments);
+commentLangFilter?.addEventListener('change', renderComments);
+
+// --- Translation ---
+//
+// Strictly additive: every failure path leaves comments rendered with their
+// original text. Nothing here may stop the inbox from displaying.
+
+let translating = false;
+
+// Ids already sent this page load. Every cache write re-fires the translations
+// listener, so a comment the model keeps dropping would otherwise be re-sent
+// in a loop. It gets one attempt per load; "Translate all" clears this.
+const translationAttempted = new Set();
+
+async function translateBatch(batch) {
+    const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: batch, targetLang: TARGET_LANG })
+    });
+    // A platform error page is HTML, not JSON; report the status instead.
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Translate failed (${response.status})`);
+    return data.items || [];
+}
+
+// Cached under its own top-level node, never inside comments/. Push ids are
+// unique database-wide, so one flat node serves comments and replies alike.
+async function cacheTranslations(results) {
+    const writes = {};
+    for (const result of results) {
+        writes[result.id] = { text: result.text, lang: result.lang, at: Date.now() };
+    }
+    if (Object.keys(writes).length > 0) {
+        await update(ref(db, 'commentTranslations'), writes);
+    }
+}
+
+async function translatePending() {
+    // Both halves must be in. Running with comments but before the cache has
+    // loaded would re-translate everything already paid for.
+    if (!commentsLoaded || !translationsLoaded || translating) return;
+
+    const pending = collectTranslatable(commentRows, translations)
+        .filter((item) => !translationAttempted.has(item.id));
+    if (pending.length === 0) return;
+    pending.forEach((item) => translationAttempted.add(item.id));
+
+    translating = true;
+    try {
+        // Cached batch by batch, so a failure part-way keeps what was paid for.
+        for (const batch of batchItems(pending, 25)) {
+            await cacheTranslations(await translateBatch(batch));
+        }
+    } catch (error) {
+        console.error('Comment translation failed:', error);
+        showToast(`Translation unavailable: ${error.message}`);
+    } finally {
+        translating = false;
+    }
+}
+
+document.getElementById('comment-translate-all')?.addEventListener('click', () => {
+    if (translating) {
+        showToast('Translation is already running.');
+        return;
+    }
+    translationAttempted.clear();
+    const pending = collectTranslatable(commentRows, translations);
+    if (pending.length === 0) {
+        showToast('Everything is already translated.');
+        return;
+    }
+    showToast(`Translating ${pending.length} comments...`);
+    translatePending();
 });
