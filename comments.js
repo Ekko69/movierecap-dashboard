@@ -1,4 +1,6 @@
-// Pure helpers for the admin comments section.
+// Helpers for the admin comments section. All pure except
+// createTranslationScheduler, which keeps state but reaches the outside world
+// only through the functions it is given.
 //
 // This module deliberately imports nothing. app.js cannot be loaded by Node —
 // it imports Firebase over https:// URLs and reads window.CONFIG at module
@@ -235,7 +237,11 @@ export function createTranslationScheduler({
             }
         } catch (error) {
             failed = true;
-            onError(error);
+            try {
+                onError(error);
+            } catch {
+                // A broken error handler must not take the scheduler with it.
+            }
         } finally {
             running = false;
         }

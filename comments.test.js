@@ -490,3 +490,16 @@ test('scheduler sends items again after clearAttempts', async () => {
     await scheduler.run();
     assert.deepEqual(sent, [['c0'], ['c0']]);
 });
+
+test('scheduler survives an error handler that throws', async () => {
+    // run() is called without awaiting, so a rejection here would go unhandled.
+    const scheduler = createTranslationScheduler({
+        isReady: () => true,
+        collectPending: () => pendingItems(1),
+        translateBatch: async () => { throw new Error('rate limited'); },
+        cache: async () => {},
+        onError: () => { throw new Error('toast failed'); }
+    });
+    await scheduler.run();
+    assert.equal(scheduler.isRunning(), false);
+});

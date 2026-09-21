@@ -31,7 +31,6 @@ import {
     needsTranslation,
     flattenComments,
     collectTranslatable,
-    batchItems,
     formatAdminReply,
     createTranslationScheduler
 } from './comments.js';
@@ -3107,8 +3106,10 @@ const translationScheduler = createTranslationScheduler({
     }
 });
 
+// Called without awaiting from the listeners, so a failure is caught here
+// rather than left as an unhandled rejection.
 function translatePending() {
-    translationScheduler.run();
+    translationScheduler.run().catch((error) => console.error('Translation scheduling failed:', error));
 }
 
 document.getElementById('comment-translate-all')?.addEventListener('click', () => {
