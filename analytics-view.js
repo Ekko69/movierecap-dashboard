@@ -35,6 +35,154 @@ function el(tag, className, text) {
     return node;
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svg(tag, attrs = {}) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
+    return node;
+}
+
+// "2026-09-01" is a calendar date, so it is formatted in UTC: in a timezone west
+// of UTC, local time would turn it into August 31.
+const shortDateFormat = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const longDateFormat = new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+const asDate = (iso) => new Date(`${iso}T00:00:00Z`);
+const shortDate = (iso) => shortDateFormat.format(asDate(iso));
+const longDate = (iso) => longDateFormat.format(asDate(iso));
+
+// The smallest clean maximum at or above the value, chosen so the middle tick
+// (half of it) is a whole number too. Finer steps keep the line from using only
+// half the plot: a peak of 228 gets 300, not 400. Below 10, a step of 3 would
+// put the middle tick on 1.5, so small values use even steps only.
+function niceMax(value) {
+    const power = 10 ** Math.floor(Math.log10(Math.max(value, 1)));
+    const steps = power >= 10 ? [1, 2, 3, 4, 5, 6, 8, 10] : [1, 2, 4, 6, 8, 10];
+    for (const step of steps) {
+        if (step * power >= value) return step * power;
+    }
+    return 10 * power;
+}
+
+function lineChart(points) {
+    const W = 720;
+    const H = 220;
+    const pad = { top: 16, right: 56, bottom: 28, left: 44 };
+    const plotW = W - pad.left - pad.right;
+    const plotH = H - pad.top - pad.bottom;
+
+    const max = niceMax(Math.max(...points.map((point) => point.activeUsers), 1));
+    const last = points.length - 1;
+    const x = (i) => pad.left + (last === 0 ? plotW / 2 : (i / last) * plotW);
+    const y = (value) => pad.top + plotH - (value / max) * plotH;
+
+    const wrap = el('div', 'line-chart');
+    const chart = svg('svg', {
+        viewBox: `0 0 ${W} ${H}`,
+        role: 'img',
+        'aria-label': `Daily active users from ${longDate(points[0].date)} to ${longDate(points[last].date)}`
+    });
+
+    // Recessive 1px grid at clean ticks; a tick at half is skipped when max is 1.
+    const ticks = max > 1 ? [0, max / 2, max] : [0, max];
+    for (const tick of ticks) {
+        chart.append(svg('line', { class: 'chart-grid', x1: pad.left, x2: pad.left + plotW, y1: y(tick), y2: y(tick) }));
+        const label = svg('text', { class: 'chart-tick', x: pad.left - 8, y: y(tick) + 4, 'text-anchor': 'end' });
+        label.textContent = formatCompact(tick);
+        chart.append(label);
+    }
+    for (const [i, anchor] of [[0, 'start'], [last, 'end']]) {
+        const label = svg('text', { class: 'chart-tick', x: x(i), y: H - 8, 'text-anchor': anchor });
+        label.textContent = shortDate(points[i].date);
+        chart.append(label);
+    }
+
+    const line = points.map((point, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(point.activeUsers).toFixed(1)}`).join(' ');
+    chart.append(svg('path', { class: 'chart-area', d: `${line} L${x(last).toFixed(1)},${y(0)} L${x(0).toFixed(1)},${y(0)} Z` }));
+    chart.append(svg('path', { class: 'chart-line', d: line }));
+
+    // The end: a ringed dot and its value, the one label on the line.
+    chart.append(svg('circle', { class: 'chart-dot', cx: x(last), cy: y(points[last].activeUsers), r: 4 }));
+    const endLabel = svg('text', { class: 'chart-end-label', x: x(last) + 10, y: y(points[last].activeUsers) + 4 });
+    endLabel.textContent = formatCompact(points[last].activeUsers);
+    chart.append(endLabel);
+
+    const crosshair = svg('line', { class: 'chart-crosshair', y1: pad.top, y2: pad.top + plotH, visibility: 'hidden' });
+    const marker = svg('circle', { class: 'chart-dot', r: 4, visibility: 'hidden' });
+    // The hit area is the whole plot, never the 2px line: readers aim at a day.
+    const hit = svg('rect', {
+        class: 'chart-hit', x: pad.left, y: pad.top, width: plotW, height: plotH, tabindex: 0,
+        'aria-label': 'Daily active users. Use the left and right arrow keys to read each day.'
+    });
+    chart.append(crosshair, marker, hit);
+
+    const tooltip = el('div', 'chart-tooltip');
+    tooltip.hidden = true;
+    wrap.append(chart, tooltip);
+
+    let index = last;
+    const showAt = (i) => {
+        index = Math.max(0, Math.min(last, i));
+        const px = x(index);
+        const py = y(points[index].activeUsers);
+        for (const [name, value] of [['x1', px], ['x2', px], ['visibility', 'visible']]) crosshair.setAttribute(name, String(value));
+        for (const [name, value] of [['cx', px], ['cy', py], ['visibility', 'visible']]) marker.setAttribute(name, String(value));
+
+        // Value first and strong; the date follows.
+        tooltip.replaceChildren(
+            el('strong', null, formatCount(points[index].activeUsers)),
+            el('span', null, `users · ${longDate(points[index].date)}`)
+        );
+        tooltip.hidden = false;
+        // The SVG scales with its container, so convert to CSS pixels.
+        const scale = chart.getBoundingClientRect().width / W;
+        tooltip.style.left = `${px * scale}px`;
+        tooltip.style.top = `${py * scale}px`;
+    };
+    const hide = () => {
+        crosshair.setAttribute('visibility', 'hidden');
+        marker.setAttribute('visibility', 'hidden');
+        tooltip.hidden = true;
+    };
+
+    hit.addEventListener('pointermove', (event) => {
+        const box = chart.getBoundingClientRect();
+        const svgX = (event.clientX - box.left) * (W / box.width);
+        showAt(last === 0 ? 0 : Math.round(((svgX - pad.left) / plotW) * last));
+    });
+    hit.addEventListener('pointerleave', hide);
+    hit.addEventListener('focus', () => showAt(index));
+    hit.addEventListener('blur', hide);
+    hit.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowLeft') showAt(index - 1);
+        else if (event.key === 'ArrowRight') showAt(index + 1);
+        else return;
+        event.preventDefault();
+    });
+
+    return wrap;
+}
+
+// The chart's table-view twin: every value reachable without hovering.
+function dailyTable(points) {
+    const details = el('details', 'chart-table');
+    details.append(el('summary', null, 'Show as table'));
+    const table = el('table', 'data-table');
+    const headRow = el('tr');
+    headRow.append(el('th', null, 'Date'), el('th', 'num', 'Active users'));
+    const head = el('thead');
+    head.append(headRow);
+    const rows = el('tbody');
+    for (const point of points) {
+        const row = el('tr');
+        row.append(el('td', null, longDate(point.date)), el('td', 'num', formatCount(point.activeUsers)));
+        rows.append(row);
+    }
+    table.append(head, rows);
+    details.append(table);
+    return details;
+}
+
 function spinner() {
     const box = el('div', 'loading-state');
     box.append(el('div', 'spinner'), el('p', null, 'Loading analytics...'));
@@ -212,5 +360,14 @@ function audienceSection(audience) {
         tiles.append(tile);
     }
     section.append(tiles);
+
+    const card = el('div', 'analytics-card');
+    card.append(el('h4', 'chart-title', 'Daily active users'));
+    if (audience.daily.length) {
+        card.append(lineChart(audience.daily), dailyTable(audience.daily));
+    } else {
+        card.append(el('p', 'analytics-empty', 'No activity in this period.'));
+    }
+    section.append(card);
     return section;
 }
