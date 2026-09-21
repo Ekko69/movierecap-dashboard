@@ -1184,7 +1184,7 @@ export function formatDuration(seconds) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test`
-Expected: PASS — 7 new tests, 154 total.
+Expected: PASS — 7 new tests, 157 total.
 
 - [ ] **Step 5: Commit**
 
@@ -1406,7 +1406,7 @@ export function buildMovieRows(movies, library, commentCounts = new Map()) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test`
-Expected: PASS — 11 new tests, 165 total.
+Expected: PASS — 11 new tests, 168 total.
 
 - [ ] **Step 5: Commit**
 
@@ -1515,7 +1515,7 @@ for (const [name, view] of Object.entries(VIEWS)) {
 - [ ] **Step 4: Check syntax and tests**
 
 Run: `node --check app.js && npm test`
-Expected: no syntax error; 165 passing.
+Expected: no syntax error; 168 passing.
 
 - [ ] **Step 5: Check all three views in the browser**
 
@@ -1638,7 +1638,7 @@ export function initAnalyticsView({ section, getMovies, getCommentRows }) {
         }
         data = null;
         if (payload.error === 'not_configured') showSetup(payload.detail);
-        else if (payload.error === 'no_access') showNoAccess(payload.serviceAccount);
+        else if (payload.error === 'no_access') showNoAccess(payload.serviceAccount, payload.detail);
         else showError(payload.detail || payload.error || `Analytics request failed (${status})`);
     }
 
@@ -1681,12 +1681,15 @@ export function initAnalyticsView({ section, getMovies, getCommentRows }) {
         body.replaceChildren(card);
     }
 
-    function showNoAccess(email) {
+    function showNoAccess(email, detail) {
         const card = el('div', 'analytics-card analytics-state');
         card.append(el('h3', null, 'Google Analytics refused access'));
         card.append(el('p', 'analytics-lead',
             'Add this service account in GA4 → Admin → Property access management, with the Viewer role:'));
         card.append(el('code', 'analytics-email', email || 'unknown'));
+        // A disabled API or a wrong property ID is refused the same way; GA's
+        // own words tell them apart.
+        if (detail) card.append(el('p', 'analytics-problem', `Google said: ${detail}`));
         card.append(el('p'), retryButton('Check again'));
         body.replaceChildren(card);
     }
@@ -2220,7 +2223,7 @@ const analyticsView = initAnalyticsView({
 - [ ] **Step 4: Check syntax and tests**
 
 Run: `node --check app.js && node --check analytics-view.js && npm test`
-Expected: no syntax errors; 165 passing.
+Expected: no syntax errors; 168 passing.
 
 - [ ] **Step 5: Check the not-configured state in the browser**
 
@@ -2451,7 +2454,7 @@ In `audienceSection`, replace the final `section.append(tiles);\n    return sect
 - [ ] **Step 3: Check syntax and tests**
 
 Run: `node --check analytics-view.js && npm test`
-Expected: no syntax error; 165 passing.
+Expected: no syntax error; 168 passing.
 
 - [ ] **Step 4: Check the chart in the browser with the fixture**
 
@@ -2611,7 +2614,7 @@ In `buildReport`, after `parts.push(audienceSection(data.audience));`, add:
 - [ ] **Step 3: Check syntax and tests**
 
 Run: `node --check analytics-view.js && npm test`
-Expected: no syntax error; 165 passing.
+Expected: no syntax error; 168 passing.
 
 - [ ] **Step 4: Check the table in the browser with the fixture**
 
@@ -2718,7 +2721,7 @@ In `buildReport`, after the `movieSection` line, add:
 - [ ] **Step 3: Check syntax and tests**
 
 Run: `node --check analytics-view.js && npm test`
-Expected: no syntax error; 165 passing.
+Expected: no syntax error; 168 passing.
 
 - [ ] **Step 4: Check the bars in the browser with the fixture**
 
@@ -2740,7 +2743,7 @@ git commit -m "feat: show categories and devices as ranked bars"
 - [ ] **Step 1: Run the whole suite**
 
 Run: `npm test`
-Expected: 165 passing, 0 failing.
+Expected: 168 passing, 0 failing.
 
 - [ ] **Step 2: Walk the section with the fixture**
 
@@ -2757,7 +2760,7 @@ With the harness and the Task 8 fixture, confirm each:
 
 - `movies: null, categories: null, missingDimensions: ['movie_title', 'item_name', 'category_name']` → the tiles and device lists render; Movie performance and Categories each show the dimensions to register.
 - `movies: { key: 'title', clicks: null, … }, missingDimensions: ['item_name']` → the table renders with "—" under Clicks, and a note names `item_name`.
-- A 403 `{ error: 'no_access', serviceAccount: 'x@y.iam.gserviceaccount.com' }` → the refused-access card shows the email.
+- A 403 `{ error: 'no_access', serviceAccount: 'x@y.iam.gserviceaccount.com', detail: 'Google Analytics Data API has not been used in project 123 before or it is disabled.' }` → the refused-access card shows the email and, beneath it, "Google said: …" with GA's message.
 - A 502 `{ error: 'ga_error', detail: 'Backend error' }` → the error card shows "Backend error" and a Retry button that re-requests.
 
 - [ ] **Step 4: Check against the real property (once credentials exist)**
