@@ -25,7 +25,7 @@ const SETUP_STEPS = [
         link: { label: 'Service accounts', href: 'https://console.cloud.google.com/iam-admin/serviceaccounts?project=movie-recap-1306e' }
     },
     { text: "Add the service account's email in GA4 → Admin → Property access management, with the Viewer role." },
-    { text: "Set GA_PROPERTY_ID and GA_SERVICE_ACCOUNT_KEY — the key file base64-encoded on one line: base64 -i key.json | tr -d '\\n' — in .env and in Vercel's environment variables, then restart the dev server." }
+    { text: "Set GA_PROPERTY_ID and GA_SERVICE_ACCOUNT_KEY — the key file base64-encoded on one line: base64 -i key.json | tr -d '\\n' — in .env and in Vercel's environment variables. Then restart the dev server, and redeploy on Vercel — it applies environment changes only to new deployments." }
 ];
 
 function el(tag, className, text) {
@@ -79,7 +79,7 @@ function lineChart(points) {
     const wrap = el('div', 'line-chart');
     const chart = svg('svg', {
         viewBox: `0 0 ${W} ${H}`,
-        role: 'img',
+        role: 'group',
         'aria-label': `Daily active users from ${longDate(points[0].date)} to ${longDate(points[last].date)}`
     });
 
@@ -118,6 +118,8 @@ function lineChart(points) {
 
     const tooltip = el('div', 'chart-tooltip');
     tooltip.hidden = true;
+    // Read out as the arrow keys move the crosshair.
+    tooltip.setAttribute('aria-live', 'polite');
     wrap.append(chart, tooltip);
 
     let index = last;
@@ -344,11 +346,12 @@ function categorySection(data) {
     return section;
 }
 
-// GA's "(not set)" is shown as "Unknown"; bare version numbers get a prefix,
-// joined as given: "Android 14", "v2.1".
+// GA's "(not set)" is shown as "Unknown". Only a bare version number gets the
+// prefix ("Android 14", "v2.1"): a value GA already names, or its "(other)"
+// row, is shown as it came rather than as "Android Android 14".
 function displayName(name, prefix = '') {
     if (name === '(not set)' || name === '') return 'Unknown';
-    return `${prefix}${name}`;
+    return prefix && /^\d/.test(name) ? `${prefix}${name}` : name;
 }
 
 function whereSection(where) {
@@ -516,10 +519,10 @@ export function initAnalyticsView({ section, getMovies, getCommentRows }) {
     };
 }
 
-// GA's own caveats, stated rather than hidden: both make totals undercount.
+// GA's own caveats, stated rather than hidden: both can make totals undercount.
 function notesLine(notes) {
     const parts = [];
-    if (notes?.thresholded) parts.push('Google withheld some small groups for privacy, so totals may undercount.');
+    if (notes?.thresholded) parts.push('Google may withhold small groups for privacy, so totals can undercount.');
     if (notes?.otherRow) parts.push('Some values were grouped into "(other)".');
     return parts.length ? el('p', 'analytics-notes', parts.join(' ')) : null;
 }

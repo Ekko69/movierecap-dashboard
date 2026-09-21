@@ -190,10 +190,11 @@ Average engagement per active user is `userEngagementDuration / activeUsers`, in
 - `missingDimensions` lists what to register by **parameter name** — `"movie_title"`, not
   `"customEvent:movie_title"` — since that is what the admin types into GA4. Where a title or an id
   would do, it names the title.
-- `notes.thresholded` reflects GA's `subjectToThresholding`: when true, GA withheld rows too
-  small to report for privacy. `notes.otherRow` reflects `dataLossFromOtherRow`: some values were
-  rolled into an "(other)" row. Either is shown as a short note, since both make totals
-  undercount without saying so.
+- `notes.thresholded` reflects GA's `subjectToThresholding`: when true, the report *may* have
+  had small rows withheld for privacy — GA sets it whenever thresholds apply, often on every
+  report once Google Signals is on, not only when something was actually dropped.
+  `notes.otherRow` reflects `dataLossFromOtherRow`: some values were rolled into an "(other)"
+  row. Either is shown as a short note, since both can make totals undercount without saying so.
 
 ### 5. States
 
