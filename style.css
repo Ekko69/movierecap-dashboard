@@ -1874,16 +1874,16 @@ textarea:focus {
 
 /* ---------- View switching ---------- */
 
-/* The comments view hides the movies view's parts from one place, so their
-   own show/hide logic cannot leak through: the last-added panel re-shows
-   itself on every movie write and on a one-minute timer. The movie form is a
-   fixed overlay and is deliberately not listed — it opens over either view. */
-.main-content.is-comments-view .content-body,
-.main-content.is-comments-view .last-added,
-.main-content.is-comments-view .header-button-group {
+/* .main-content's data-view says which view shows. Every view but Movies hides
+   the Movies view's parts from this one place, so their own show/hide logic
+   cannot leak through: the last-added panel re-shows itself on every movie
+   write and on a one-minute timer. The movie form is a fixed overlay and is
+   deliberately not listed — it opens over any view. */
+.main-content:not([data-view="movies"]) .content-body,
+.main-content:not([data-view="movies"]) .last-added,
+.main-content:not([data-view="movies"]) .header-button-group {
     display: none !important;
 }
-
 /* A long URL in the comment being replied to wraps rather than widening the
    dialog, as it already does in the inbox. */
 .reply-context-text,

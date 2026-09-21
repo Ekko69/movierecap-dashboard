@@ -26,6 +26,9 @@
                 <button class="nav-item" id="nav-comments">
                     <span class="icon">💬</span> Comments
                 </button>
+                <button class="nav-item" id="nav-analytics">
+                    <span class="icon">📊</span> Analytics
+                </button>
                 <!-- Placeholder for future nav items -->
                 <button class="nav-item" id="nav-settings">
                     <span class="icon">⚙️</span> Settings
@@ -50,7 +53,7 @@
         </aside>
 
         <!-- Main Content -->
-        <main class="main-content">
+        <main class="main-content" data-view="movies">
             <header class="top-header">
                 <h1 class="page-title">Dashboard</h1>
                 <div class="header-button-group">
@@ -474,6 +477,16 @@
                         <p>Loading comments...</p>
                     </div>
                 </div>
+            </section>
+            <!-- Analytics. analytics-view.js fills #analytics-body the first
+                 time the view is opened. -->
+            <section id="analytics-view" class="analytics-view hidden">
+                <div class="analytics-filters" role="group" aria-label="Date range">
+                    <button type="button" class="range-btn" data-range="7" aria-pressed="false">Last 7 days</button>
+                    <button type="button" class="range-btn" data-range="28" aria-pressed="true">Last 28 days</button>
+                    <button type="button" class="range-btn" data-range="90" aria-pressed="false">Last 90 days</button>
+                </div>
+                <div id="analytics-body" class="analytics-body"></div>
             </section>
         </main>
     </div>

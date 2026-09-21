@@ -2817,33 +2817,34 @@ initBulkYoutube({
 
 // --- View routing ---
 //
-// The dashboard had no view switching before this: the Movies view was the
-// whole page. One class on .main-content decides which view shows (see the
-// .is-comments-view rules in style.css). The Movies view's own parts keep
-// managing their own hidden state — the last-added panel re-shows itself on
-// every movie write and on a one-minute timer — and the class overrides them
-// without touching that logic. #nav-settings stays deliberately unwired.
+// .main-content's data-view attribute decides which view shows (see "View
+// switching" in style.css). The Movies view's own parts keep managing their own
+// hidden state — the last-added panel re-shows itself on every movie write and
+// on a one-minute timer — and the attribute overrides them without touching
+// that logic. #nav-settings stays deliberately unwired.
 
 const mainContent = document.querySelector('.main-content');
-const navDashboard = document.getElementById('nav-dashboard');
-const navComments = document.getElementById('nav-comments');
-const commentsView = document.getElementById('comments-view');
 const pageTitle = document.querySelector('.page-title');
 
+const VIEWS = {
+    movies: { nav: document.getElementById('nav-dashboard'), section: null, title: 'Dashboard' },
+    comments: { nav: document.getElementById('nav-comments'), section: document.getElementById('comments-view'), title: 'Comments' },
+    analytics: { nav: document.getElementById('nav-analytics'), section: document.getElementById('analytics-view'), title: 'Analytics' }
+};
+
 function showView(name) {
-    const isComments = name === 'comments';
-
-    mainContent?.classList.toggle('is-comments-view', isComments);
-    commentsView?.classList.toggle('hidden', !isComments);
-
-    navDashboard?.classList.toggle('active', !isComments);
-    navComments?.classList.toggle('active', isComments);
-
-    if (pageTitle) pageTitle.textContent = isComments ? 'Comments' : 'Dashboard';
+    if (!VIEWS[name]) return;
+    if (mainContent) mainContent.dataset.view = name;
+    for (const [viewName, view] of Object.entries(VIEWS)) {
+        view.nav?.classList.toggle('active', viewName === name);
+        view.section?.classList.toggle('hidden', viewName !== name);
+    }
+    if (pageTitle) pageTitle.textContent = VIEWS[name].title;
 }
 
-navDashboard?.addEventListener('click', () => showView('movies'));
-navComments?.addEventListener('click', () => showView('comments'));
+for (const [name, view] of Object.entries(VIEWS)) {
+    view.nav?.addEventListener('click', () => showView(name));
+}
 
 // --- Comments ---
 
