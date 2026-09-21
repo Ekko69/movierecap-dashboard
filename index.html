@@ -23,7 +23,9 @@
                 <button class="nav-item active" id="nav-dashboard">
                     <span class="icon">🎬</span> Movies
                 </button>
-                <!-- Placeholder for future nav items -->
+                <button class="nav-item" id="nav-comments">
+                    <span class="icon">💬</span> Comments
+                </button>
                 <button class="nav-item" id="nav-settings">
                     <span class="icon">⚙️</span> Settings
                 </button>
@@ -449,6 +451,29 @@
                     <button id="next-page" class="btn btn-secondary btn-sm" disabled>Next</button>
                 </div>
             </section>
+
+            <!-- Comments inbox. A sibling view of .content-body; the router in
+                 app.js shows exactly one of them at a time. -->
+            <section id="comments-view" class="comments-view hidden">
+                <div class="filter-bar">
+                    <input type="text" id="comment-search" placeholder="Search comments, users or movies..." class="search-input">
+                    <select id="comment-lang-filter" class="filter-select">
+                        <option value="all">All languages</option>
+                        <option value="translated">Translated only</option>
+                        <option value="untranslated">Untranslated only</option>
+                    </select>
+                    <button type="button" id="comment-translate-all" class="btn btn-secondary btn-sm">🌐 Translate all</button>
+                </div>
+
+                <div id="comments-summary" class="comments-summary"></div>
+
+                <div id="comments-container" class="comments-list">
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <p>Loading comments...</p>
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 
@@ -519,6 +544,39 @@
             </div>
             <div class="panel-footer">
                 <button id="batch-complete-ok" class="btn btn-primary">OK</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Reply composer. The preview is mandatory: it is the only thing between
+         a bad machine translation and a user reading it. -->
+    <section id="reply-modal" class="panel-overlay hidden">
+        <div class="panel-content reply-panel">
+            <div class="panel-header">
+                <h2>Reply</h2>
+                <button type="button" id="reply-close" class="btn btn-ghost">✕</button>
+            </div>
+            <div class="reply-body">
+                <div class="reply-context">
+                    <span id="reply-context-movie" class="reply-context-movie"></span>
+                    <span id="reply-context-user" class="reply-context-user"></span>
+                    <p id="reply-context-text" class="reply-context-text"></p>
+                    <p id="reply-context-translation" class="reply-context-translation"></p>
+                </div>
+
+                <label class="section-label" for="reply-input">Your reply (English)</label>
+                <textarea id="reply-input" class="reply-input" rows="3" placeholder="Type your reply..."></textarea>
+
+                <div id="reply-preview" class="reply-preview hidden">
+                    <span class="reply-preview-label">Will be posted as:</span>
+                    <pre id="reply-preview-text" class="reply-preview-text"></pre>
+                </div>
+
+                <div class="reply-actions">
+                    <button type="button" id="reply-cancel" class="btn btn-ghost">Cancel</button>
+                    <button type="button" id="reply-translate" class="btn btn-secondary">🌐 Translate &amp; preview</button>
+                    <button type="button" id="reply-post" class="btn btn-primary" disabled>Post reply</button>
+                </div>
             </div>
         </div>
     </section>
