@@ -1643,3 +1643,17 @@ textarea:focus {
 .last-added-actions .btn {
     flex: 0 0 auto;
 }
+
+/* --- Pre-flight duplicate warning (YouTube URL) --- */
+/* Inherits .duplicate-warning; only the placement differs, since this one sits
+   under the URL input rather than in the metadata section. */
+
+.source-duplicate-warning {
+    margin-top: 12px;
+}
+
+/* Bulk rows skipped before download are not failures — nothing went wrong. */
+.status-badge.skipped {
+    background: rgba(241, 196, 15, 0.18);
+    color: #ffd86b;
+}

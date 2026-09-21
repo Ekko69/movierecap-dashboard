@@ -105,6 +105,21 @@
                                              <input type="text" id="youtube-url" placeholder="https://www.youtube.com/watch?v=..." class="youtube-url-input">
                                              <button type="button" id="fetch-youtube-btn" class="btn btn-secondary btn-sm">Fetch Info</button>
                                          </div>
+                                         <!-- Fires on the URL alone, before any fetch or download.
+                                              Deliberately separate from #duplicate-warning: that one is
+                                              driven by title/year and hides itself whenever they stop
+                                              matching, which would erase this one. -->
+                                         <div id="source-duplicate-warning" class="duplicate-warning source-duplicate-warning hidden">
+                                             <img id="source-duplicate-thumb" class="duplicate-warning-thumb" alt="">
+                                             <div class="duplicate-warning-body">
+                                                 <span class="duplicate-warning-label">⚠ Already imported</span>
+                                                 <span id="source-duplicate-text"></span>
+                                                 <div class="duplicate-warning-actions">
+                                                     <button type="button" id="source-duplicate-open" class="btn btn-sm btn-secondary">Open existing</button>
+                                                     <button type="button" id="source-duplicate-override" class="btn btn-sm btn-ghost">Import anyway</button>
+                                                 </div>
+                                             </div>
+                                         </div>
                                          <div id="youtube-preview" class="hidden">
                                              <div class="youtube-preview-inner">
                                                  <img id="youtube-thumb-preview" src="" alt="YouTube Thumbnail">
