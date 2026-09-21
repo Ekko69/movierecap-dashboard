@@ -183,6 +183,129 @@ function dailyTable(points) {
     return details;
 }
 
+const TABLE_PAGE = 25;
+
+const plural = (count, word) => `${formatCount(count)} ${count === 1 ? word : `${word}s`}`;
+
+// Only real web images: a thumbnail URL comes from the database, which anyone
+// can write to.
+const isSafeImage = (url) => typeof url === 'string' && /^https:\/\//.test(url);
+
+// What to register in GA4 for a section to appear, and that GA does not fill in
+// the past.
+function missingNote(params, what) {
+    const note = el('div', 'analytics-missing');
+    note.append(el('p', null, `${what} need these custom dimensions registered in GA4 → Admin → Custom definitions, with scope Event:`));
+    const list = el('p', 'missing-params');
+    for (const param of params) list.append(el('code', null, param));
+    note.append(list);
+    note.append(el('p', 'analytics-footnote', 'Data starts from the day each one is registered; GA does not fill in the past.'));
+    return note;
+}
+
+function titleList(summary, items) {
+    const details = el('details', 'title-list');
+    details.append(el('summary', null, summary));
+    const list = el('ul');
+    for (const item of items) list.append(el('li', null, item));
+    details.append(list);
+    return details;
+}
+
+function movieTable(rows, hasClicks) {
+    const wrap = el('div', 'movie-stats-wrap');
+    const table = el('table', 'data-table movie-stats');
+    const headRow = el('tr');
+    headRow.append(
+        el('th', null, 'Movie'), el('th', 'num', 'Clicks'), el('th', 'num', 'Plays'),
+        el('th', 'num', 'Completed'), el('th', 'num', 'Completion'), el('th', 'num', 'Comments')
+    );
+    const head = el('thead');
+    head.append(headRow);
+    const body = el('tbody');
+
+    const fill = (count) => body.replaceChildren(...rows.slice(0, count).map((row) => {
+        const tr = el('tr');
+        const cell = el('td', 'movie-cell');
+        const thumb = el('span', 'movie-thumb');
+        if (isSafeImage(row.thumbnail)) {
+            const img = el('img');
+            img.src = row.thumbnail;
+            img.alt = '';
+            img.loading = 'lazy';
+            // A broken image leaves the empty slot, so titles stay aligned.
+            img.addEventListener('error', () => img.remove());
+            thumb.append(img);
+        }
+        cell.append(thumb, el('span', 'movie-name', row.title));
+        if (row.copies > 1) cell.append(el('span', 'copies-badge', `${row.copies} copies`));
+        tr.append(
+            cell,
+            el('td', 'num', hasClicks ? formatCount(row.clicks) : '—'),
+            el('td', 'num strong', formatCount(row.plays)),
+            el('td', 'num', formatCount(row.completes)),
+            el('td', 'num', formatPercent(row.completionRate)),
+            el('td', 'num', formatCount(row.comments))
+        );
+        return tr;
+    }));
+
+    fill(TABLE_PAGE);
+    table.append(head, body);
+    wrap.append(table);
+
+    if (rows.length > TABLE_PAGE) {
+        const more = el('button', 'btn btn-ghost btn-sm', `Show all ${formatCount(rows.length)}`);
+        more.type = 'button';
+        more.addEventListener('click', () => {
+            fill(rows.length);
+            more.remove();
+        });
+        wrap.append(more);
+    }
+    return wrap;
+}
+
+function movieSection(data, library, commentRows) {
+    const section = el('section', 'analytics-section');
+    section.append(el('h3', 'analytics-heading', 'Movie performance'));
+    const card = el('div', 'analytics-card');
+    section.append(card);
+
+    if (!data.movies) {
+        card.append(missingNote(data.missingDimensions.filter((param) => param !== 'category_name'), 'Per-movie figures'));
+        return section;
+    }
+
+    const { startMs, endMs } = rangeBounds(data.range);
+    const comments = commentsInRange(commentRows, startMs, endMs);
+    const { rows, neverPlayed, notInLibrary } = buildMovieRows(data.movies, library, comments);
+    const hasClicks = data.movies.clicks !== null;
+
+    if (!hasClicks) {
+        const clickParams = data.missingDimensions.filter((param) => param === 'item_name' || param === 'item_id');
+        if (clickParams.length) card.append(missingNote(clickParams, 'Clicks'));
+    }
+
+    card.append(rows.length ? movieTable(rows, hasClicks) : el('p', 'analytics-empty', 'No plays in this period.'));
+    card.append(el('p', 'analytics-footnote',
+        "Plays can count twice when a viewer switches to fullscreen — a quirk in the app's logging — which also pulls completion rates down."));
+
+    if (neverPlayed.length) {
+        card.append(titleList(
+            `No plays in this period: ${plural(neverPlayed.length, 'title')}`,
+            neverPlayed.map((row) => (row.copies > 1 ? `${row.title} (${row.copies} copies)` : row.title))
+        ));
+    }
+    if (notInLibrary.length) {
+        card.append(titleList(
+            `Renamed or removed: ${plural(notInLibrary.length, 'title')} still in Google Analytics`,
+            notInLibrary.map((row) => `${row.key} — ${plural(row.plays, 'play')}`)
+        ));
+    }
+    return section;
+}
+
 function spinner() {
     const box = el('div', 'loading-state');
     box.append(el('div', 'spinner'), el('p', null, 'Loading analytics...'));
@@ -339,6 +462,7 @@ function buildReport(data, movies, commentRows) {
     const notes = notesLine(data.notes);
     if (notes) parts.push(notes);
     parts.push(audienceSection(data.audience));
+    parts.push(movieSection(data, movies, commentRows));
     return parts;
 }
 
