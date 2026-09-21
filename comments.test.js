@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { detectScript, needsTranslation, TARGET_LANG, ADMIN_NAME, flattenComments, collectTranslatable, batchItems, formatAdminReply, createTranslationScheduler,
-    MAX_TRANSLATE_CHARS, clipForTranslation, replyLanguage, deletionWrites } from './comments.js';
+    MAX_TRANSLATE_CHARS, clipForTranslation, clipText, replyLanguage, deletionWrites } from './comments.js';
 
 test('detectScript names the scripts present in the live data', () => {
     assert.equal(detectScript('ဘာသာပြန်ပေးပါ'), 'myanmar');
@@ -581,4 +581,12 @@ test('deletionWrites refuses any key that could widen the delete', () => {
     assert.throws(() => deletionWrites(withBlankReply, withBlankReply), /malformed/);
     const blankReply = { id: '' };
     assert.throws(() => deletionWrites(blankReply, { ...ok, replies: [blankReply] }), /malformed/);
+});
+
+test('clipText cuts at any limit without splitting an emoji', () => {
+    // The delete confirm clips names and quotes at 60, 120 and 160.
+    assert.equal(clipText('abc💜', 4), 'abc');
+    assert.equal(clipText('abc💜', 5), 'abc💜');
+    assert.equal(clipText('abcdef', 3), 'abc');
+    assert.equal(clipText('ab', 3), 'ab');
 });

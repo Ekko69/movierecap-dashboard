@@ -35,7 +35,8 @@ import {
     createTranslationScheduler,
     MAX_TRANSLATE_CHARS,
     replyLanguage,
-    deletionWrites
+    deletionWrites,
+    clipText
 } from './comments.js';
 
 // Firebase Config
@@ -3328,7 +3329,8 @@ replyPostBtn?.addEventListener('click', async () => {
 // warning out of a dialog the browser truncates, or fake extra lines in it.
 function forDialog(text, limit) {
     const line = String(text).replace(/\s+/g, ' ').trim();
-    return line.length > limit ? `${line.slice(0, limit)}…` : line;
+    const clipped = clipText(line, limit);
+    return clipped.length < line.length ? `${clipped}…` : line;
 }
 
 async function deleteComment(item, row) {

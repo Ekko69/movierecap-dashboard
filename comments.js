@@ -157,12 +157,18 @@ export function flattenComments(tree, moviesById = new Map()) {
 // long comment would otherwise stop its 24 neighbours from ever translating.
 export const MAX_TRANSLATE_CHARS = 500;
 
-// Text cut to what the endpoint accepts. Measured in UTF-16 units, as the
-// endpoint measures it, and never cut through the middle of an emoji.
-export function clipForTranslation(text) {
-    if (text.length <= MAX_TRANSLATE_CHARS) return text;
-    const clipped = text.slice(0, MAX_TRANSLATE_CHARS);
+// Text cut to at most `limit` UTF-16 units — the unit the endpoint and
+// String#length both count — and never through the middle of an emoji, whose
+// two halves would otherwise leave a lone, unprintable surrogate.
+export function clipText(text, limit) {
+    if (text.length <= limit) return text;
+    const clipped = text.slice(0, limit);
     return /[\uD800-\uDBFF]$/.test(clipped) ? clipped.slice(0, -1) : clipped;
+}
+
+// Text cut to what the translate endpoint accepts.
+export function clipForTranslation(text) {
+    return clipText(text, MAX_TRANSLATE_CHARS);
 }
 
 // Every comment and reply still needing a translation fetched.
