@@ -1657,3 +1657,9 @@ textarea:focus {
     background: rgba(241, 196, 15, 0.18);
     color: #ffd86b;
 }
+
+/* A skip is not a failure, so it must not borrow .batch-item-error's red. */
+.batch-item-skip {
+    font-size: 0.75rem;
+    color: #ffd86b;
+}

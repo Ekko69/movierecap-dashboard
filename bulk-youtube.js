@@ -243,7 +243,7 @@ function renderQueue() {
 
             if (item.skipReason) {
                 const skipEl = document.createElement('span');
-                skipEl.className = 'batch-item-error';
+                skipEl.className = 'batch-item-skip';
                 skipEl.textContent = item.skipReason;
                 statusWrap.appendChild(skipEl);
             }
@@ -446,7 +446,7 @@ async function runBulkImport() {
         message += ` (${duplicates} possible duplicate${duplicates === 1 ? '' : 's'})`;
     }
     deps.showToast(message);
-    deps.showBatchCompleteModal(completed, failed);
+    deps.showBatchCompleteModal(completed, failed, skipped);
 }
 
 export function resetBulkYoutube() {

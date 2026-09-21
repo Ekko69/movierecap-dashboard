@@ -152,6 +152,16 @@ test('videoIdFromSourceURL accepts the no-www form', () => {
     );
 });
 
+test('videoIdFromSourceURL requires exactly 11 characters', () => {
+    // This value is a Map lookup key for the duplicate check. A looser capture
+    // would still "work" everywhere else while silently never matching.
+    assert.equal(videoIdFromSourceURL('https://www.youtube.com/watch?v=short'), null);
+    assert.equal(
+        videoIdFromSourceURL('https://www.youtube.com/watch?v=trjp0T-eW6QEXTRA'),
+        'trjp0T-eW6Q'
+    );
+});
+
 test('videoIdFromSourceURL returns null for anything else', () => {
     assert.equal(videoIdFromSourceURL(null), null);
     assert.equal(videoIdFromSourceURL(''), null);

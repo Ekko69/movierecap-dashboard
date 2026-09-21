@@ -265,9 +265,11 @@ toastEl?.addEventListener('click', () => {
     toastEl.classList.remove('show');
 });
 
-function showBatchCompleteModal(completedCount, failedCount) {
+function showBatchCompleteModal(completedCount, failedCount, skippedCount = 0) {
     if (!batchCompleteModal || !batchCompleteMessage) return;
-    batchCompleteMessage.textContent = `Batch upload finished: ${completedCount} completed, ${failedCount} failed.`;
+    let message = `Batch upload finished: ${completedCount} completed, ${failedCount} failed`;
+    if (skippedCount) message += `, ${skippedCount} skipped as duplicate${skippedCount === 1 ? '' : 's'}`;
+    batchCompleteMessage.textContent = `${message}.`;
     batchCompleteModal.classList.remove('hidden');
 }
 
@@ -306,7 +308,10 @@ function runQueue(items, worker, concurrency, onUpdate) {
             Promise.resolve()
                 .then(() => worker(item))
                 .then(() => {
-                    item.status = 'completed';
+                    // A worker may settle the item itself — the bulk importer marks
+                    // an already-imported video 'skipped' and returns early. Claiming
+                    // completion over that would report a skip as an import.
+                    if (item.status !== 'skipped') item.status = 'completed';
                     onUpdate();
                 })
                 .catch((error) => {
@@ -365,6 +370,16 @@ async function uploadThumbnailBlob(movieId, blob, name = 'batch-thumb.jpg') {
 
 function isDuplicateMovie(title, year) {
     return existingMoviesByKey.has(buildDuplicateKey(title, year));
+}
+
+// Like findMovieByVideoId but with no exemption for the movie being edited.
+// The bulk importer runs against the whole library, and its tab lives inside the
+// movie form — so editingMovieId can still be set when a bulk run starts.
+// Exempting it there would let the very movie you are editing be re-imported in
+// full, which is the one thing this check exists to prevent.
+function findImportedMovieByVideoId(videoId) {
+    if (!videoId) return null;
+    return existingMoviesByVideoId.get(videoId) || null;
 }
 
 // The already-imported movie for a YouTube video id, or null. Never returns the
@@ -1225,21 +1240,28 @@ duplicateWarningDismiss?.addEventListener('click', () => {
     hideDuplicateWarning();
 });
 
+// Shared by both duplicate banners' "Open existing". Swapping the form mid-save
+// would let the in-flight submit finish against a mutated editingMovieId and a
+// cleared currentSourceURL, writing the new movie through the edit path and
+// without its source. Opening another movie also discards whatever video is in
+// the form, which the user should get to refuse.
+function confirmLeavingFormForMovie() {
+    if (isSavingMovie) {
+        alert('This movie is still saving. Wait for it to finish before opening another.');
+        return false;
+    }
+    if (currentVideoFile || uploadedVideoUrl) {
+        return confirm(
+            'This discards the video you are working on and opens the existing movie instead. Continue?'
+        );
+    }
+    return true;
+}
+
 duplicateWarningOpen?.addEventListener('click', () => {
     const match = duplicateWarningMatch;
     if (!match) return;
-    // Swapping the form mid-save would let the in-flight submit finish against a
-    // mutated editingMovieId, writing the new movie through the edit path.
-    if (isSavingMovie) {
-        alert('This movie is still saving. Wait for it to finish before opening another.');
-        return;
-    }
-    if (currentVideoFile || uploadedVideoUrl) {
-        const proceed = confirm(
-            'This discards the video you are working on and opens the existing movie instead. Continue?'
-        );
-        if (!proceed) return;
-    }
+    if (!confirmLeavingFormForMovie()) return;
     openForm(match);
 });
 
@@ -1255,6 +1277,10 @@ const sourceDuplicateOverride = document.getElementById('source-duplicate-overri
 
 // The movie the banner points at, so "Open existing" knows its target.
 let sourceDuplicateMatch = null;
+// The video id the banner was actually raised for. "Import anyway" must exempt
+// this, never whatever happens to be in the URL field when it is clicked — the
+// field can be edited after the banner appears.
+let sourceDuplicateVideoId = null;
 // One video id the user chose to import anyway. A single slot, not a set: the
 // form handles one video at a time, so overriding a second replaces the first
 // and the exemption can never accumulate.
@@ -1262,6 +1288,7 @@ let overriddenVideoId = null;
 
 function hideSourceDuplicateWarning() {
     sourceDuplicateMatch = null;
+    sourceDuplicateVideoId = null;
     sourceDuplicateWarning?.classList.add('hidden');
 }
 
@@ -1281,6 +1308,7 @@ function blockedAsDuplicate(videoId) {
     }
 
     sourceDuplicateMatch = match;
+    sourceDuplicateVideoId = videoId;
     sourceDuplicateText.textContent =
         `"${match.title}" (${match.year || 'no year'}) — added ${formatRelativeTime(match.updatedAt, Date.now())}`;
 
@@ -1298,15 +1326,25 @@ function blockedAsDuplicate(videoId) {
 }
 
 sourceDuplicateOpen?.addEventListener('click', () => {
-    if (sourceDuplicateMatch) openForm(sourceDuplicateMatch);
+    const match = sourceDuplicateMatch;
+    if (!match) return;
+    if (!confirmLeavingFormForMovie()) return;
+    openForm(match);
 });
 
 sourceDuplicateOverride?.addEventListener('click', () => {
-    const videoId = extractYouTubeVideoId(
-        document.getElementById('youtube-url')?.value?.trim() || ''
-    );
-    if (videoId) overriddenVideoId = videoId;
+    // sourceDuplicateVideoId, not the URL field: the field may have been edited
+    // since the banner appeared, and exempting an id the user was never warned
+    // about would let a different duplicate through silently.
+    if (sourceDuplicateVideoId) overriddenVideoId = sourceDuplicateVideoId;
     hideSourceDuplicateWarning();
+});
+
+// Editing the URL invalidates whatever the banner is showing. Without this the
+// banner would keep describing the previous video, and "Open existing" would
+// open an unrelated movie.
+document.getElementById('youtube-url')?.addEventListener('input', () => {
+    if (sourceDuplicateMatch) hideSourceDuplicateWarning();
 });
 
 function resetMediaInputs() {
@@ -2147,6 +2185,11 @@ onValue(moviesRef, (snapshot) => {
     applyFiltersAndRender();
     if (!movieFormPanel.classList.contains('hidden')) refreshDuplicateWarning();
     renderLastAdded();
+}, (error) => {
+    // Without this the failure is silent: allMovies stays empty, so the duplicate
+    // indexes stay empty, and every duplicate check quietly passes.
+    console.error('[movies] realtime read failed', error);
+    showToast('Could not load your movies — duplicate checks are disabled until this reconnects.');
 });
 
 function applyFiltersAndRender() {
@@ -2734,7 +2777,7 @@ document.getElementById('youtube-url')?.addEventListener('input', () => {
 
 initBulkYoutube({
     extractYouTubeVideoId,
-    findMovieByVideoId,
+    findMovieByVideoId: findImportedMovieByVideoId,
     uploadItemVideo,
     uploadThumbnailBlob,
     enrichAndSave,
