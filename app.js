@@ -2469,18 +2469,8 @@ async function generateAIThumbnailBlob(sourceThumbnailUrl) {
 
     const { imageUrl } = await res.json();
 
-    // Fetch generated image through proxy to avoid CORS issues with canvas
-    const imgRes = await fetch(`/api/proxy-image?url=${encodeURIComponent(imageUrl)}`);
-    if (!imgRes.ok) throw new Error('Failed to fetch generated image');
-    const generatedBlob = await imgRes.blob();
-    const generatedObjectUrl = URL.createObjectURL(generatedBlob);
-
-    try {
-        // Composite logo watermark onto generated image using Canvas
-        return await compositeWatermark(generatedObjectUrl);
-    } finally {
-        URL.revokeObjectURL(generatedObjectUrl);
-    }
+    // Composite logo watermark onto generated image using Canvas
+    return compositeWatermark(imageUrl);
 }
 
 async function generateAIThumbnail() {

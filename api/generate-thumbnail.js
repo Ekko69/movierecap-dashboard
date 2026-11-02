@@ -1,8 +1,7 @@
-import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const IMAGE_MODEL = 'gpt-image-2.5-flare';
+// Both edges must be multiples of 16, which rules out 1920x1080. This is exact
+// 16:9, so the client's 1920x1080 watermark canvas does not stretch it.
+const IMAGE_SIZE = '2048x1152';
 
 const SYSTEM_PROMPT = `You are a master photorealistic image renderer and cinematographer. You take a precise scene description and produce a result that is indistinguishable from a real photograph or a frame from a big-budget Hollywood film. Your images have the weight, texture, and physical believability of real life — not rendered, not illustrated, not painted. Every pore, fabric thread, light reflection, and shadow behaves exactly as it would in the real physical world. You never deviate from photorealism under any circumstances.`;
 
@@ -51,12 +50,11 @@ Be very specific and literal — this description will be used to recreate the e
     return data.choices?.[0]?.message?.content?.trim() || '';
 }
 
-const buildPrompt = (sceneDescription, logoUrl) => {
-    const logoInstruction = logoUrl
-        ? `\n\nWATERMARK: Place the pink-purple circular logo from ${logoUrl} as a small semi-transparent watermark (~7% of frame width) in the bottom-right corner. Preserve its exact colors. Keep it premium, subtle, and non-intrusive.`
-        : '';
+const buildPrompt = (sceneDescription) => {
+    // The Images API has no system prompt field, so it leads the prompt instead.
+    return `${SYSTEM_PROMPT}
 
-    return `Recreate this exact scene as an ultra-photorealistic cinematic photograph:
+Recreate this exact scene as an ultra-photorealistic cinematic photograph:
 
 ORIGINAL SCENE — preserve every detail exactly:
 ${sceneDescription}
@@ -96,13 +94,13 @@ BRAND COLOR ACCENTS (physical, not decorative):
 COMPOSITION:
 - All subjects remain in their exact original positions — do not reframe or repose
 - Strengthen foreground/background depth separation via lighting, not repositioning
-- 16:9 frame at 1920×1080, optimized for thumbnail clarity at small mobile sizes
+- 16:9 frame at 2048×1152, optimized for thumbnail clarity at small mobile sizes
 
 NON-NEGOTIABLE RULES:
 - Identical subjects: every person's face, body, clothing must match the original exactly
 - No new characters, no removed characters, no altered appearances
 - Zero text, titles, captions, watermarks, or UI elements of any kind
-- 100% photorealistic — any painterly, illustrated, or rendered quality is a failure${logoInstruction}`;
+- 100% photorealistic — any painterly, illustrated, or rendered quality is a failure`;
 };
 
 export default async function handler(req, res) {
@@ -111,9 +109,6 @@ export default async function handler(req, res) {
     if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-    const FAL_API_KEY = process.env.FAL_API_KEY;
-    if (!FAL_API_KEY) return res.status(500).json({ error: 'FAL_API_KEY not configured on server' });
-
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
     if (!OPENAI_API_KEY) return res.status(500).json({ error: 'OPENAI_API_KEY not configured on server' });
 
@@ -121,66 +116,39 @@ export default async function handler(req, res) {
     if (!thumbnailUrl) return res.status(400).json({ error: 'Missing thumbnailUrl' });
 
     try {
-        // Step 1: Run logo upload and vision description in parallel
-        const logoPath = join(__dirname, '..', 'assets', 'img', 'logo-icon.png');
-        const logoBuffer = readFileSync(logoPath);
-
-        const [uploadRes, sceneDescription] = await Promise.all([
-            fetch('https://fal.run/fal-ai/utils/upload', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Key ${FAL_API_KEY}`,
-                    'Content-Type': 'image/png'
-                },
-                body: logoBuffer
-            }),
-            describeImageWithVision(thumbnailUrl, OPENAI_API_KEY)
-        ]);
-
-        let logoUrl = null;
-        if (uploadRes.ok) {
-            const uploadData = await uploadRes.json();
-            logoUrl = uploadData?.url || null;
-        }
-
+        // Step 1: Describe the source frame
+        const sceneDescription = await describeImageWithVision(thumbnailUrl, OPENAI_API_KEY);
         if (!sceneDescription) throw new Error('Failed to analyze thumbnail image');
 
         console.log('[generate-thumbnail] Scene description:', sceneDescription.slice(0, 200) + '...');
 
         // Step 2: Generate cinematic thumbnail using the visual description
-        const prompt = buildPrompt(sceneDescription, logoUrl);
-
-        const falRes = await fetch('https://fal.run/fal-ai/nano-banana-2', {
+        const imageRes = await fetch('https://api.openai.com/v1/images/generations', {
             method: 'POST',
             headers: {
-                'Authorization': `Key ${FAL_API_KEY}`,
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                prompt,
-                system_prompt: SYSTEM_PROMPT,
-                aspect_ratio: '16:9',
-                resolution: '2K',
+                model: IMAGE_MODEL,
+                prompt: buildPrompt(sceneDescription),
+                size: IMAGE_SIZE,
+                quality: 'high',
                 output_format: 'jpeg',
-                num_images: 1
+                n: 1
             })
         });
 
-        if (!falRes.ok) {
-            const errData = await falRes.json().catch(() => ({}));
-            const detail = errData.detail;
-            const errMsg = typeof detail === 'string' ? detail
-                : Array.isArray(detail) ? detail.map(d => d.msg || JSON.stringify(d)).join('; ')
-                : typeof errData.error === 'string' ? errData.error
-                : JSON.stringify(errData) || `fal.ai returned ${falRes.status}`;
-            throw new Error(errMsg);
+        if (!imageRes.ok) {
+            const errData = await imageRes.json().catch(() => ({}));
+            throw new Error(errData?.error?.message || `OpenAI Images API returned ${imageRes.status}`);
         }
 
-        const data = await falRes.json();
-        const imageUrl = data?.images?.[0]?.url;
-        if (!imageUrl) throw new Error('No image returned from fal.ai');
+        const data = await imageRes.json();
+        const b64 = data?.data?.[0]?.b64_json;
+        if (!b64) throw new Error('No image returned from OpenAI');
 
-        return res.status(200).json({ imageUrl, logoUrl });
+        return res.status(200).json({ imageUrl: `data:image/jpeg;base64,${b64}` });
     } catch (err) {
         const msg = err?.message || String(err);
         console.error('[generate-thumbnail]', msg);
