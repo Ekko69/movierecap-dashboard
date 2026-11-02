@@ -73,21 +73,9 @@
                     <div class="panel-header">
                         <h2 id="form-title">Add New Movie</h2>
                         <div class="header-actions">
-                            <label class="ai-thumb-toggle-label" title="Automatically generate an AI thumbnail after syncing">
-                                <input type="checkbox" id="auto-ai-thumbnail-toggle">
-                                <span class="ai-thumb-toggle-track"></span>
-                                <span class="ai-thumb-toggle-text">✨ Auto AI Thumbnail</span>
-                            </label>
-                            <label class="ai-thumb-toggle-label" title="Paste a YouTube URL and run the whole flow automatically: fetch info, download, AI thumbnail, sync, then save">
-                                <input type="checkbox" id="auto-run-toggle">
-                                <span class="ai-thumb-toggle-track"></span>
-                                <span class="ai-thumb-toggle-text">⚡ Auto-run</span>
-                            </label>
-                            <button id="sync-data-btn" class="btn btn-warning btn-sm" type="button"
-                                style="margin-right: 10px;">
-                                ⚡ Sync Movie Data
-                            </button>
-                            <button id="close-form-btn" class="btn-icon">&times;</button>
+                            <button id="sync-data-btn" class="btn btn-secondary btn-sync ico ico-sync" type="button"
+                                title="Transcribe the video and fill in the details below">Sync Movie Data</button>
+                            <button id="close-form-btn" class="btn-icon" type="button" aria-label="Close">&times;</button>
                         </div>
                     </div>
 
@@ -96,19 +84,32 @@
 
                         <!-- Video Upload Section -->
                         <div class="form-section upload-section">
-                                     <h3>Media</h3>
+                                     <h3><span class="step-number" aria-hidden="true">1</span>Video &amp; artwork</h3>
 
-                                     <!-- Source toggle -->
-                                     <div class="source-toggle">
-                                         <button type="button" id="source-file-btn" class="source-tab active">Upload File</button>
-                                         <button type="button" id="source-youtube-btn" class="source-tab">YouTube URL</button>
-                                         <button type="button" id="source-bulk-btn" class="source-tab">📊 Bulk YouTube</button>
+                                     <div class="source-bar">
+                                         <div class="source-toggle" role="group" aria-label="Video source">
+                                             <button type="button" id="source-file-btn" class="source-tab active" aria-pressed="true">Upload file</button>
+                                             <button type="button" id="source-youtube-btn" class="source-tab" aria-pressed="false">YouTube URL</button>
+                                             <button type="button" id="source-bulk-btn" class="source-tab" aria-pressed="false">Bulk YouTube</button>
+                                         </div>
+                                         <div class="automation-toggles">
+                                             <label class="ai-thumb-toggle-label" title="Automatically generate an AI thumbnail after syncing">
+                                                 <input type="checkbox" id="auto-ai-thumbnail-toggle">
+                                                 <span class="ai-thumb-toggle-track"></span>
+                                                 <span class="ai-thumb-toggle-text">Auto AI thumbnail</span>
+                                             </label>
+                                             <label class="ai-thumb-toggle-label auto-run-label" title="Paste a YouTube URL and run the whole flow automatically: fetch info, download, AI thumbnail, sync, then save">
+                                                 <input type="checkbox" id="auto-run-toggle">
+                                                 <span class="ai-thumb-toggle-track"></span>
+                                                 <span class="ai-thumb-toggle-text">Auto-run</span>
+                                             </label>
+                                         </div>
                                      </div>
 
                                      <!-- YouTube input section -->
                                      <div id="youtube-input-section" class="hidden">
                                          <div class="youtube-url-group">
-                                             <input type="text" id="youtube-url" placeholder="https://www.youtube.com/watch?v=..." class="youtube-url-input">
+                                             <input type="url" id="youtube-url" aria-label="YouTube URL" placeholder="https://www.youtube.com/watch?v=..." class="youtube-url-input">
                                              <button type="button" id="fetch-youtube-btn" class="btn btn-secondary btn-sm">Fetch Info</button>
                                          </div>
                                          <!-- Fires on the URL alone, before any fetch or download.
@@ -135,13 +136,13 @@
                                                  </div>
                                              </div>
                                              <div class="youtube-download-row">
-                                                 <select id="youtube-quality" class="youtube-quality-select">
+                                                 <select id="youtube-quality" class="youtube-quality-select" aria-label="Download quality">
                                                      <option value="360p">360p</option>
                                                      <option value="480p">480p</option>
                                                      <option value="720p">720p</option>
                                                      <option value="1080p">1080p</option>
                                                  </select>
-                                                 <button type="button" id="download-youtube-btn" class="btn btn-primary btn-sm">⬇️ Download Video</button>
+                                                 <button type="button" id="download-youtube-btn" class="btn btn-primary btn-sm ico ico-download">Download video</button>
                                              </div>
                                              <div id="youtube-download-progress" class="hidden">
                                                  <div class="youtube-progress-bar-wrap">
@@ -162,7 +163,7 @@
                                          </p>
                                          <div class="bulk-controls">
                                              <input type="file" id="bulk-excel-file" accept=".xlsx,.xls,.csv">
-                                             <select id="bulk-quality" class="youtube-quality-select">
+                                             <select id="bulk-quality" class="youtube-quality-select" aria-label="Download quality">
                                                  <option value="360p">360p</option>
                                                  <option value="480p">480p</option>
                                                  <option value="720p">720p</option>
@@ -182,20 +183,22 @@
                                      </div>
 
                                      <div class="upload-grid">
-                                <div class="file-drop-zone" id="video-drop-zone">
+                                <div class="video-zone">
+                                    <span class="field-label">Video</span>
+                                <div class="file-drop-zone" id="video-drop-zone" tabindex="0" role="button" aria-label="Choose a video file">
                                     <input type="file" id="video-file" accept="video/mp4" class="hidden-input">
                                     <div class="drop-content">
-                                        <div class="icon-circle">⬆️</div>
-                                        <p>Drag & drop video here or <span class="highlight">browse</span></p>
+                                        <div class="icon-circle ico ico-upload" aria-hidden="true"></div>
+                                        <p>Drag &amp; drop a video or <span class="highlight">browse</span></p>
                                         <small>MP4 files only</small>
                                     </div>
                                     <video id="video-preview" controls class="hidden"></video>
-                                    <button type="button" id="change-video-btn" class="btn-text hidden">Change
-                                        Video</button>
+                                    <button type="button" id="change-video-btn" class="btn-text hidden">Change video</button>
+                                </div>
                                 </div>
 
                                 <div class="thumbnail-zone">
-                                    <label>Thumbnail</label>
+                                    <span class="field-label">Thumbnail</span>
                                     <div class="thumbnail-preview-container">
                                         <img id="thumbnail-img" src="" alt="Thumbnail Preview" class="hidden">
                                         <div class="placeholder-thumb" id="thumb-placeholder">
@@ -218,32 +221,27 @@
                                         </div>
                                     </div>
                                     <div class="thumb-controls">
-                                        <button type="button" id="capture-btn" class="btn btn-secondary" disabled>
-                                            📸 Capture from Video
-                                        </button>
-                                        <button type="button" id="edit-thumbnail-btn" class="btn btn-secondary" disabled>
-                                            ✂️ Edit Current Thumbnail
-                                        </button>
-                                        <button type="button" id="generate-ai-thumbnail-btn" class="btn btn-ai" disabled>
-                                            ✨ AI Thumbnail
-                                        </button>
+                                        <button type="button" id="capture-btn" class="btn btn-secondary btn-sm ico ico-camera" disabled
+                                            title="Capture the current frame. Add a video first.">Capture frame</button>
+                                        <button type="button" id="edit-thumbnail-btn" class="btn btn-secondary btn-sm ico ico-crop" disabled
+                                            title="Crop the current thumbnail">Crop</button>
+                                        <button type="button" id="generate-ai-thumbnail-btn" class="btn btn-ai btn-sm ico ico-sparkle" disabled
+                                            title="Generate from the YouTube thumbnail. Fetch a YouTube video first.">AI thumbnail</button>
                                         <div id="crop-controls" class="crop-controls hidden">
-                                            <button type="button" id="apply-crop-btn" class="btn btn-primary btn-sm">
-                                                ✂️ Apply Crop
-                                            </button>
-                                            <button type="button" id="cancel-crop-btn" class="btn btn-ghost btn-sm">
-                                                Cancel
-                                            </button>
+                                            <button type="button" id="apply-crop-btn" class="btn btn-primary btn-sm">Apply crop</button>
+                                            <button type="button" id="cancel-crop-btn" class="btn btn-ghost btn-sm">Cancel</button>
                                         </div>
                                         <canvas id="capture-canvas" class="hidden"></canvas>
                                     </div>
                                 </div>
 
                                 <div class="subtitle-zone">
-                                    <label>Subtitles (.vtt, .srt)</label>
+                                    <span class="field-label">Subtitles <span class="optional">optional</span></span>
                                     <div class="file-input-wrapper">
-                                        <input type="file" id="subtitle-file" accept=".vtt,.srt">
+                                        <input type="file" id="subtitle-file" class="visually-hidden" accept=".vtt,.srt">
+                                        <label for="subtitle-file" class="btn btn-secondary btn-sm subtitle-pick">Choose file</label>
                                         <span id="subtitle-file-name">No file selected</span>
+                                        <small class="subtitle-hint">.vtt or .srt. We use it to suggest the details below.</small>
                                     </div>
                                 </div>
                             </div>
@@ -251,7 +249,7 @@
 
                         <!-- Metadata Section -->
                         <div class="form-section metadata-section" id="metadata-section">
-                            <h3>Movie Details</h3>
+                            <h3><span class="step-number" aria-hidden="true">2</span>Movie details</h3>
                             <div class="form-grid layout-2-col">
                                 <!-- Left Column: Inputs -->
                                 <div class="form-column main-inputs">
@@ -283,8 +281,8 @@
                                         </div>
                                     </div>
 
-                                    <div class="form-group category-group">
-                                        <label>Categories (Select multiple)</label>
+                                    <fieldset class="form-group category-group">
+                                        <legend>Categories <span class="optional">choose any</span></legend>
                                         <div class="category-chips">
                                             <div class="category-section">
                                                 <span class="section-label">Special</span>
@@ -337,7 +335,7 @@
                                                 </label>
                                             </div>
                                         </div>
-                                    </div>
+                                    </fieldset>
 
                                     <div class="form-group">
                                         <label for="description">Description</label>
@@ -345,8 +343,8 @@
                                             <textarea id="description" rows="4"
                                                 placeholder="Brief synopsis..."></textarea>
                                             <button type="button" id="ai-generate-btn"
-                                                class="btn btn-secondary btn-sm ai-btn">
-                                                ✨ AI Generate
+                                                class="btn btn-secondary btn-sm ai-btn ico ico-sparkle">
+                                                AI Generate
                                             </button>
                                         </div>
                                     </div>
@@ -356,44 +354,43 @@
                                 <div class="form-column poster-input">
                                     <!-- Vertical Poster (Featured Thumbnail) -->
                                     <div class="form-group">
-                                        <label>Movie Poster (9:16)</label>
+                                        <span class="field-label">Poster <span class="optional">9:16, optional</span></span>
                                         <div id="poster-sync-status" class="poster-sync-status hidden">
                                             Poster updated from OMDb during sync
                                         </div>
                                         <div id="featured-thumbnail-zone" class="upload-zone sm">
                                             <div class="drop-content" id="featured-drop-content">
-                                                <i class="fas fa-image"></i>
-                                                <p>Drag or paste 9:16 poster</p>
-                                                <button type="button" class="btn btn-outline btn-sm"
-                                                    onclick="document.getElementById('featured-thumbnail-file').click()">Select
-                                                    File</button>
+                                                <div class="icon-circle ico ico-image" aria-hidden="true"></div>
+                                                <p>Drag or paste a poster</p>
+                                                <button type="button" class="btn btn-secondary btn-sm">Select file</button>
                                             </div>
                                             <input type="file" id="featured-thumbnail-file" accept="image/*"
                                                 class="hidden">
                                             <div id="featured-thumb-placeholder" class="thumb-placeholder hidden">
                                                 Featured
                                             </div>
-                                            <img id="featured-thumbnail-img" class="thumbnail-preview hidden">
+                                            <img id="featured-thumbnail-img" class="thumbnail-preview hidden" alt="Poster preview">
                                             <button type="button" id="remove-featured-btn" class="remove-btn hidden"
-                                                title="Remove Poster">×</button>
+                                                title="Remove poster" aria-label="Remove poster">×</button>
                                         </div>
                                     </div>
                                 </div>
                             </div>
+                        </div>
 
-                            <!-- Progress & Actions -->
-                            <div class="form-footer">
-                                <div id="progress-container" class="progress-container hidden">
-                                    <span class="progress-label">Uploading...</span>
-                                    <div class="progress-track">
-                                        <div id="upload-progress-bar" class="progress-fill"></div>
-                                    </div>
-                                </div>
-                                <div class="action-buttons">
-                                    <button type="button" class="btn btn-ghost" id="cancel-form">Cancel</button>
-                                    <button type="submit" class="btn btn-primary" id="save-btn">Upload & Save</button>
+                        <!-- Progress & Actions -->
+                        <div class="form-footer">
+                            <div id="progress-container" class="progress-container hidden" aria-live="polite">
+                                <span class="progress-label">Uploading...</span>
+                                <div class="progress-track">
+                                    <div id="upload-progress-bar" class="progress-fill"></div>
                                 </div>
                             </div>
+                            <div class="action-buttons">
+                                <button type="button" class="btn btn-ghost" id="cancel-form">Cancel</button>
+                                <button type="submit" class="btn btn-primary" id="save-btn">Upload &amp; Save</button>
+                            </div>
+                        </div>
                     </form>
                 </div>
             </section>

@@ -729,17 +729,27 @@ closeFormBtn.addEventListener('click', () => closeForm());
 cancelFormBtn.addEventListener('click', () => closeForm());
 
 // File Drop Zone
-dropZone.addEventListener('click', () => videoInput.click());
+// The player sits inside the zone, so clicks on its controls must not reopen the
+// file picker. The input is inside too: its own click would otherwise bubble back.
+dropZone.addEventListener('click', (e) => {
+    if (e.target === videoPreview || e.target === videoInput) return;
+    videoInput.click();
+});
+dropZone.addEventListener('keydown', (e) => {
+    if (e.target !== dropZone || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault();
+    videoInput.click();
+});
 dropZone.addEventListener('dragover', (e) => {
     e.preventDefault();
-    dropZone.style.borderColor = 'var(--color-accent)';
+    dropZone.classList.add('is-dragover');
 });
 dropZone.addEventListener('dragleave', () => {
-    dropZone.style.borderColor = 'rgba(255,255,255,0.2)';
+    dropZone.classList.remove('is-dragover');
 });
 dropZone.addEventListener('drop', (e) => {
     e.preventDefault();
-    dropZone.style.borderColor = 'rgba(255,255,255,0.2)';
+    dropZone.classList.remove('is-dragover');
     if (e.dataTransfer.files.length) {
         handleVideoSelect(e.dataTransfer.files[0]);
     }
@@ -850,18 +860,50 @@ movieForm.addEventListener('submit', handleFormSubmit);
 
 
 // Featured Thumbnail (Poster)
+function setFeaturedFile(file) {
+    currentFeaturedThumbnailFile = file;
+    // A poster chosen here replaces one OMDb supplied during a sync.
+    fetchedPosterUrl = null;
+    featuredPreview.src = URL.createObjectURL(file);
+    featuredPreview.classList.remove('hidden');
+    featuredPlaceholder.classList.add('hidden');
+    featuredDropContent.classList.add('hidden');
+    removeFeaturedBtn.classList.remove('hidden');
+    posterSyncStatus.classList.add('hidden');
+}
+
 featuredInput.addEventListener('change', (e) => {
-    if (e.target.files.length) {
-        const file = e.target.files[0];
-        currentFeaturedThumbnailFile = file;
-        const url = URL.createObjectURL(file);
-        featuredPreview.src = url;
-        featuredPreview.classList.remove('hidden');
-        featuredPlaceholder.classList.add('hidden');
-        featuredDropContent.classList.add('hidden');
-        removeFeaturedBtn.classList.remove('hidden');
-        posterSyncStatus.classList.add('hidden');
-    }
+    if (e.target.files.length) setFeaturedFile(e.target.files[0]);
+});
+
+const featuredZone = document.getElementById('featured-thumbnail-zone');
+
+featuredZone?.addEventListener('click', (e) => {
+    if (e.target === featuredInput || removeFeaturedBtn.contains(e.target)) return;
+    featuredInput.click();
+});
+featuredZone?.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    featuredZone.classList.add('is-dragover');
+});
+featuredZone?.addEventListener('dragleave', () => {
+    featuredZone.classList.remove('is-dragover');
+});
+featuredZone?.addEventListener('drop', (e) => {
+    e.preventDefault();
+    featuredZone.classList.remove('is-dragover');
+    const file = e.dataTransfer.files[0];
+    if (file?.type.startsWith('image/')) setFeaturedFile(file);
+});
+
+// Pasting only ever claims an image, so ordinary text paste into the fields is untouched.
+document.addEventListener('paste', (e) => {
+    if (movieFormPanel.classList.contains('hidden')) return;
+    if (document.getElementById('metadata-section')?.classList.contains('hidden')) return;
+    const file = Array.from(e.clipboardData?.files || []).find((f) => f.type.startsWith('image/'));
+    if (!file) return;
+    e.preventDefault();
+    setFeaturedFile(file);
 });
 
 removeFeaturedBtn.addEventListener('click', () => {
@@ -897,7 +939,7 @@ async function generateDescription() {
     }
 
     aiGenerateBtn.disabled = true;
-    aiGenerateBtn.textContent = '⏳ Generating...';
+    aiGenerateBtn.textContent = 'Generating...';
 
     try {
         const prompt = `Write a short, engaging 2-3 sentence description for a movie recap video about "${title}"${year ? ` (${year})` : ''}. Make it exciting and capture the essence of the story. Focus on the main plot and what makes it interesting. Keep it under 150 characters.`;
@@ -928,7 +970,7 @@ async function generateDescription() {
         alert('Failed to generate description. Please try again or write one manually.');
     } finally {
         aiGenerateBtn.disabled = false;
-        aiGenerateBtn.textContent = '✨ AI Generate';
+        aiGenerateBtn.textContent = 'AI Generate';
     }
 }
 
@@ -1098,6 +1140,7 @@ function openForm(movie = null) {
     editingMovieId = null;
     clearDuplicateWarningState();
     document.getElementById('form-title').innerText = 'Add New Movie';
+    saveBtn.textContent = 'Upload & Save';
 
     // Uncheck all categories
     document.querySelectorAll('input[name="category"]').forEach(cb => cb.checked = false);
@@ -1105,6 +1148,7 @@ function openForm(movie = null) {
     if (movie) {
         editingMovieId = movie.id;
         document.getElementById('form-title').innerText = 'Edit Movie';
+        saveBtn.textContent = 'Save changes';
         document.getElementById('title').value = movie.title;
         document.getElementById('year').value = movie.year;
         document.getElementById('duration').value = movie.duration;
@@ -1160,6 +1204,8 @@ function openForm(movie = null) {
     }
 
     movieFormPanel.classList.remove('hidden');
+    // The form scrolls on its own now, so it would otherwise reopen where it was left.
+    movieForm.scrollTop = 0;
 }
 
 function closeForm() {
@@ -1750,7 +1796,7 @@ async function syncMovieData() {
 
     const btn = document.getElementById('sync-data-btn');
     btn.disabled = true;
-    btn.textContent = "⏳ Syncing...";
+    btn.textContent = "Syncing...";
     progressContainer.classList.remove('hidden');
 
     try {
@@ -1872,7 +1918,7 @@ async function syncMovieData() {
         alert("Sync failed: " + error.message);
     } finally {
         btn.disabled = false;
-        btn.textContent = "⚡ Sync Movie Data";
+        btn.textContent = "Sync Movie Data";
     }
 }
 
@@ -2482,7 +2528,7 @@ async function generateAIThumbnail() {
     const loadingOverlay = document.getElementById('ai-thumb-loading');
 
     btn.disabled = true;
-    btn.textContent = '⏳ Generating...';
+    btn.textContent = 'Generating...';
     loadingOverlay.classList.remove('hidden');
 
     try {
@@ -2501,7 +2547,7 @@ async function generateAIThumbnail() {
     } finally {
         aiThumbnailGenerating = false;
         btn.disabled = false;
-        btn.textContent = '✨ AI Thumbnail';
+        btn.textContent = 'AI thumbnail';
         loadingOverlay.classList.add('hidden');
     }
 }
@@ -2697,7 +2743,9 @@ function setSourceMode(activeBtnId) {
     if (isBulkProcessing()) return;
     SOURCE_TABS.forEach(({ btnId, panelId }) => {
         const isActive = btnId === activeBtnId;
-        document.getElementById(btnId)?.classList.toggle('active', isActive);
+        const btn = document.getElementById(btnId);
+        btn?.classList.toggle('active', isActive);
+        btn?.setAttribute('aria-pressed', String(isActive));
         document.getElementById(panelId)?.classList.toggle('hidden', !isActive);
     });
     // Bulk rows write themselves to the database, so the manual details form
